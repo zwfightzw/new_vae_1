@@ -118,8 +118,8 @@ class FullQDisentangledVAE(nn.Module):
 
             z_fwd_all = torch.stack(z_fwd_list, dim=2).view(batch_size, self.hidden_dim)
             # update weight, w0<...<wd<=1, d means block_size
-            wt = self.z_w_function(z_fwd_all)
-            wt = cumsoftmax(wt)
+            #wt = self.z_w_function(z_fwd_all)
+            #wt = cumsoftmax(wt)
 
             z_prior_fwd = self.z_prior_out(z_fwd_all)
 
@@ -245,11 +245,10 @@ class Trainer(object):
 
                 z_fwd_all = torch.stack(z_fwd_list, dim=2).view(len, self.model.hidden_dim)
                 # update weight, w0<...<wd<=1, d means block_size
-                wt = self.model.z_w_function(z_fwd_all)
-                wt = cumsoftmax(wt)
+                #wt = self.model.z_w_function(z_fwd_all)
+                #wt = cumsoftmax(wt)
 
                 z_prior_fwd = self.model.z_prior_out(z_fwd_all)
-
                 z_fwd_latent_mean = z_prior_fwd[:, :self.model.z_dim]
                 z_fwd_latent_lar = z_prior_fwd[:, self.model.z_dim:]
 
@@ -317,7 +316,7 @@ if __name__ == '__main__':
     # state size
     parser.add_argument('--z-dim', type=int, default=144)  # 72 144
     parser.add_argument('--hidden-dim', type=int, default=252) #  216 252
-    parser.add_argument('--conv-dim', type=int, default=512)  # 256 512
+    parser.add_argument('--conv-dim', type=int, default=256)  # 256 512
     # data size
     parser.add_argument('--batch-size', type=int, default=64)
     parser.add_argument('--frame-size', type=int, default=8)

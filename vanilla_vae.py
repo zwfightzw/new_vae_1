@@ -48,7 +48,7 @@ class FullQDisentangledVAE(nn.Module):
 
         # observation encoder / decoder
         self.enc_obs = Encoder(feat_size=self.hidden_dim, output_size=self.conv_dim)
-        self.dec_obs = Decoder(input_size=self.z_dim,
+        self.dec_obs = Decoder(input_size=self.z_dim+ self.hidden_dim,
                                feat_size=self.hidden_dim)
 
     def reparameterize(self, mean, logvar, random_sampling=True):
@@ -79,10 +79,11 @@ class FullQDisentangledVAE(nn.Module):
         zt_1_lar = zt_1_post[:, self.z_dim:]
 
         post_z_1 = self.reparameterize(zt_1_mean, zt_1_lar, self.training)
-        zt_obs_list.append(post_z_1)
 
         #zt_1 = torch.zeros(batch_size, self.z_dim).to(device)
         z_fwd = post_z_1.new_zeros(batch_size, self.hidden_dim)
+        cat_ht_zt = torch.cat((z_fwd, post_z_1), dim=1)
+        zt_obs_list.append(cat_ht_zt)
 
         for t in range(1, seq_size):
             # posterior over ct, q(ct|ot,ft)
@@ -94,11 +95,11 @@ class FullQDisentangledVAE(nn.Module):
             z_post_lar_list.append(zt_post_lar)
             z_post_sample = self.reparameterize(zt_post_mean, zt_post_lar, self.training)
 
-            # p(xt|zt)
-            zt_obs_list.append(z_post_sample)
-
             # prior over ct of each block, ct_i~p(ct_i|zt-1_i)
             z_fwd = self.z_to_z_fwd(post_z_1, z_fwd)
+            cat_ht_zt = torch.cat((z_fwd, z_post_sample), dim=1)
+            # p(xt|zt)
+            zt_obs_list.append(cat_ht_zt)
             z_prior_fwd = self.z_prior_out(z_fwd)
 
             z_fwd_latent_mean = z_prior_fwd[:, :self.z_dim]
@@ -201,8 +202,9 @@ class Trainer(object):
             #zt_1 = [Normal(torch.zeros(self.model.z_dim).to(self.device), torch.ones(self.model.z_dim).to(self.device)).rsample() for i in range(len)]
             #zt_1 = torch.stack(zt_1, dim=0)
 
-            zt_dec.append(zt_1)
             z_fwd = zt_1.new_zeros(len, self.model.hidden_dim)
+            cat_ht_zt = torch.cat((z_fwd, zt_1), dim=1)
+            zt_dec.append(cat_ht_zt)
 
             for t in range(1, 8):
 
@@ -214,7 +216,8 @@ class Trainer(object):
                 z_fwd_latent_lar = z_prior_fwd[:, self.model.z_dim:]
 
                 zt = self.model.reparameterize(z_fwd_latent_mean, z_fwd_latent_lar, self.model.training)
-                zt_dec.append(zt)
+                cat_ht_zt = torch.cat((z_fwd, zt), dim=1)
+                zt_dec.append(cat_ht_zt)
                 zt_1 = zt
 
             zt_dec = torch.stack(zt_dec, dim=1)
@@ -277,7 +280,7 @@ if __name__ == '__main__':
     # state size
     parser.add_argument('--z-dim', type=int, default=144)  # 72 144
     parser.add_argument('--hidden-dim', type=int, default=252) #  216 252
-    parser.add_argument('--conv-dim', type=int, default=512)  # 256 512
+    parser.add_argument('--conv-dim', type=int, default=256)  # 256 512
     # data size
     parser.add_argument('--batch-size', type=int, default=64)
     parser.add_argument('--frame-size', type=int, default=8)
