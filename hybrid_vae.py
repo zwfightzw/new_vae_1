@@ -109,11 +109,11 @@ class FullQDisentangledVAE(nn.Module):
                 # prior over ct of each block, ct_i~p(ct_i|zt-1_i)
                 '''
                 if fwd_t==0:
-                    zt_1_tmp = concat(post_z_1[:, fwd_t * each_block_size:(fwd_t + 2) * each_block_size], torch.zeros(batch_size, self.z_dim//self.block_size).to(device))
+                    zt_1_tmp = concat(post_z_1[:, fwd_t * each_block_size:(fwd_t + 2) * each_block_size], torch.zeros(batch_size, self.z_dim//self.block_size).to(self.device))
                 if fwd_t==1:
                     zt_1_tmp = post_z_1
                 if fwd_t==2:
-                    zt_1_tmp = concat(torch.zeros(batch_size, self.z_dim//self.block_size).to(device),post_z_1[:, (fwd_t-1) * each_block_size:(fwd_t + 1) * each_block_size])
+                    zt_1_tmp = concat(torch.zeros(batch_size, self.z_dim//self.block_size).to(self.device),post_z_1[:, (fwd_t-1) * each_block_size:(fwd_t + 1) * each_block_size])
                 '''
                 z_fwd_list[fwd_t] = self.z_to_c_fwd_list[fwd_t](post_z_1, z_fwd_list[fwd_t],w=wt[:,fwd_t].view(-1,1))
 
@@ -242,11 +242,11 @@ class Trainer(object):
                     '''
                     if fwd_t == 0:
                         zt_1_tmp = concat(zt_1[:, fwd_t * each_block_size:(fwd_t + 2) * each_block_size],
-                                          torch.zeros(len, self.model.z_dim // self.model.block_size).to(device))
+                                          torch.zeros(len, self.model.z_dim // self.model.block_size).to(self.device))
                     if fwd_t == 1:
                         zt_1_tmp = zt_1
                     if fwd_t == 2:
-                        zt_1_tmp = concat(torch.zeros(len, self.model.z_dim//self.model.block_size).to(device),
+                        zt_1_tmp = concat(torch.zeros(len, self.model.z_dim//self.model.block_size).to(self.device),
                                           zt_1[:, (fwd_t - 1) * each_block_size:(fwd_t + 1) * each_block_size])
                                           
                     '''
@@ -296,7 +296,7 @@ class Trainer(object):
             kl_loss = []
             write_log("Running Epoch : {}".format(epoch + 1), self.log_path)
             for i, data in enumerate(self.train, 1):
-                data = data.to(device)
+                data = data.to(self.device)
                 self.optimizer.zero_grad()
                 zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, z, recon_x = self.model(data)
                 loss, kl = loss_fn(data, recon_x, zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar)
