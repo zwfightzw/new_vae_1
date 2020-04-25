@@ -261,6 +261,7 @@ class Trainer(object):
             write_log("Epoch {} : Average Loss: {}, KL loss :{}".format(epoch + 1, meanloss, klloss), self.log_path)
             self.save_checkpoint(epoch)
             self.model.eval()
+            
             sample = iter(self.test).next().to(self.device)
             self.sample_frames(epoch + 1, sample)
             self.recon_frame(epoch + 1, sample)
