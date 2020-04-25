@@ -47,7 +47,7 @@ class FullQDisentangledVAE(nn.Module):
         self.z_rnn = nn.RNN(self.hidden_dim * 2, self.hidden_dim, batch_first=True)
         self.z_post_out = nn.Linear(self.hidden_dim, self.z_dim * 2)
 
-        self.z_prior_out = nn.Linear(self.hidden_dim, self.z_dim * 2)
+        self.z_prior_out_list = [nn.Linear(self.hidden_dim, self.z_dim * 2//self.block_size) for i in range(self.block_size)]
 
         self.z_to_c_fwd_list = [
             GRUCell(input_size=self.z_dim, hidden_size=self.hidden_dim).to(device)
@@ -122,10 +122,16 @@ class FullQDisentangledVAE(nn.Module):
             wt = self.z_w_function(z_fwd_all)
             wt = cumsoftmax(wt)
 
-            z_prior_fwd = self.z_prior_out(z_fwd_all)
-
-            z_fwd_latent_mean = z_prior_fwd[:, :self.z_dim]
-            z_fwd_latent_lar = z_prior_fwd[:, self.z_dim:]
+            for i in range(self.block_size):
+                z_prior_fwd = self.z_prior_out_list[i](z_fwd_list[i])
+                if i == 0:
+                    z_fwd_latent_mean = z_prior_fwd[:, :self.z_dim // self.block_size]
+                    z_fwd_latent_lar = z_prior_fwd[:, self.z_dim // self.block_size:]
+                else:
+                    z_fwd_latent_mean = concat(
+                        z_fwd_latent_mean, z_prior_fwd[:, :self.z_dim // self.block_size])
+                    z_fwd_latent_lar = concat(
+                        z_fwd_latent_lar, z_prior_fwd[:, self.z_dim // self.block_size:])
 
             # store the prior of ct_i
             z_prior_mean_list.append(z_fwd_latent_mean)
@@ -252,9 +258,14 @@ class Trainer(object):
                 wt = self.model.z_w_function(z_fwd_all)
                 wt = cumsoftmax(wt)
 
-                z_prior_fwd = self.model.z_prior_out(z_fwd_all)
-                z_fwd_latent_mean = z_prior_fwd[:, :self.model.z_dim]
-                z_fwd_latent_lar = z_prior_fwd[:, self.model.z_dim:]
+                for i in range(self.model.block_size):
+                    z_prior_fwd = self.model.z_prior_out_list[i](z_fwd_list[i])
+                    if i == 0:
+                        z_fwd_latent_mean = z_prior_fwd[:, :self.model.z_dim//self.model.block_size]
+                        z_fwd_latent_lar = z_prior_fwd[:, self.model.z_dim//self.model.block_size:]
+                    else:
+                        z_fwd_latent_mean = concat(z_fwd_latent_mean, z_prior_fwd[:, :self.model.z_dim//self.model.block_size])
+                        z_fwd_latent_lar = concat(z_fwd_latent_lar, z_prior_fwd[:, self.model.z_dim//self.model.block_size:])
 
                 # store the prior of ct_i
                 zt = self.model.reparameterize(z_fwd_latent_mean, z_fwd_latent_lar, self.model.training)
