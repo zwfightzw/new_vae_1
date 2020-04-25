@@ -91,8 +91,8 @@ class FullQDisentangledVAE(nn.Module):
         zt_obs_list.append(post_z_1)
 
         # init wt
-        wt = torch.ones(batch_size, self.block_size).to(device)
-        z_fwd_list = [torch.zeros(batch_size, self.hidden_dim).to(device) for i in range(self.block_size)]
+        wt = torch.ones(batch_size, self.block_size).to(self.device)
+        z_fwd_list = [torch.zeros(batch_size, self.hidden_dim).to(self.device) for i in range(self.block_size)]
         for t in range(1, seq_size):
 
             z_post_out = self.z_post_out(lstm_out[:, t])
@@ -234,8 +234,8 @@ class Trainer(object):
 
             zt_dec.append(zt_1)
             # init wt
-            wt = torch.ones(len, self.model.block_size).to(device)
-            z_fwd_list = [torch.zeros(len, self.model.hidden_dim).to(device) for i in range(self.model.block_size)]
+            wt = torch.ones(len, self.model.block_size).to(self.device)
+            z_fwd_list = [torch.zeros(len, self.model.hidden_dim).to(self.device) for i in range(self.model.block_size)]
             for t in range(1, self.model.frames):
                 for fwd_t in range(self.model.block_size):
                     # prior over ct of each block, ct_i~p(ct_i|zt-1_i)
