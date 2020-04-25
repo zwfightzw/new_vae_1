@@ -53,7 +53,7 @@ class FullQDisentangledVAE(nn.Module):
             GRUCell(input_size=self.z_dim, hidden_size=self.hidden_dim).to(device)
             for i in range(self.block_size)]
 
-        self.z_w_function = nn.Linear(self.hidden_dim, self.block_size)
+        self.z_w_function = nn.Linear(self.hidden_dim*3, self.block_size)
         # observation encoder / decoder
         self.enc_obs = Encoder(feat_size=self.hidden_dim, output_size=self.conv_dim)
         self.dec_obs = Decoder(input_size=self.z_dim,
@@ -117,7 +117,7 @@ class FullQDisentangledVAE(nn.Module):
                 '''
                 z_fwd_list[fwd_t] = self.z_to_c_fwd_list[fwd_t](post_z_1, z_fwd_list[fwd_t],w=wt[:,fwd_t].view(-1,1))
 
-            z_fwd_all = torch.stack(z_fwd_list, dim=2).sum(dim=2).view(batch_size, self.hidden_dim)
+            z_fwd_all = torch.stack(z_fwd_list, dim=2).view(batch_size, self.hidden_dim*self.block_size)
             # update weight, w0<...<wd<=1, d means block_size
             wt = self.z_w_function(z_fwd_all)
             wt = cumsoftmax(wt)
@@ -253,7 +253,7 @@ class Trainer(object):
 
                     z_fwd_list[fwd_t] = self.model.z_to_c_fwd_list[fwd_t](zt_1, z_fwd_list[fwd_t], wt[:, fwd_t].view(-1,1))
 
-                z_fwd_all = torch.stack(z_fwd_list, dim=2).sum(dim=2).view(len, self.model.hidden_dim)
+                z_fwd_all = torch.stack(z_fwd_list, dim=2).view(len, self.model.hidden_dim*self.model.block_size)
                 # update weight, w0<...<wd<=1, d means block_size
                 wt = self.model.z_w_function(z_fwd_all)
                 wt = cumsoftmax(wt)
