@@ -136,7 +136,6 @@ class FullQDisentangledVAE(nn.Module):
             # store the prior of ct_i
             z_prior_mean_list.append(z_fwd_latent_mean)
             z_prior_lar_list.append(z_fwd_latent_lar)
-
             post_z_1 = z_post_sample
 
         zt_obs_list = torch.stack(zt_obs_list, dim=1)
