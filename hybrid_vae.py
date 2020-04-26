@@ -164,16 +164,11 @@ def loss_fn(original_seq, recon_seq, zt_1_mean, zt_1_lar,z_post_mean, z_post_log
 
     # compute kl related to states, kl(q(ct|ot,ft)||p(ct|zt-1))
     kld_z0 = -0.5 * torch.sum(1 + zt_1_lar - torch.pow(zt_1_mean, 2) - torch.exp(zt_1_lar))
-    kld_zt = -0.5 * torch.sum(1 + z_post_logvar - torch.pow(z_post_mean, 2) - torch.exp(z_post_logvar))
-    kld_zt_p = -0.5 * torch.sum(1 + z_prior_logvar - torch.pow(z_prior_mean, 2) - torch.exp(z_prior_logvar))
-
     z_post_var = torch.exp(z_post_logvar)
     z_prior_var = torch.exp(z_prior_logvar)
     kld_z = 0.5 * torch.sum(
         z_prior_logvar - z_post_logvar + ((z_post_var + torch.pow(z_post_mean - z_prior_mean, 2)) / z_prior_var) - 1)
-    return (obs_cost + kld_z + kld_z0+ kld_zt)/batch_size , (kld_z + kld_z0 +kld_zt)/batch_size
-    #return (obs_cost + kld_z + kld_z0 + kld_zt + kld_zt_p)/batch_size , (kld_z + kld_z0 + kld_zt+kld_zt_p)/batch_size
-
+    return (obs_cost + kld_z + kld_z0)/batch_size , (kld_z + kld_z0)/batch_size
 
 class Trainer(object):
     def __init__(self, model, device, train, test, epochs, batch_size, learning_rate, nsamples,
