@@ -47,13 +47,13 @@ class FullQDisentangledVAE(nn.Module):
         self.z_rnn = nn.RNN(self.hidden_dim * 2, self.hidden_dim, batch_first=True)
         self.z_post_out = nn.Linear(self.hidden_dim, self.z_dim * 2)
 
-        self.z_prior_out_list = [nn.Linear(self.hidden_dim, self.z_dim * 2//self.block_size).to(device) for i in range(self.block_size)]
+        self.z_prior_out_list = [nn.Linear(self.hidden_dim//self.block_size, self.z_dim * 2//self.block_size).to(device) for i in range(self.block_size)]
 
         self.z_to_c_fwd_list = [
-            GRUCell(input_size=self.z_dim, hidden_size=self.hidden_dim).to(self.device)
+            GRUCell(input_size=self.z_dim, hidden_size=self.hidden_dim//self.block_size).to(self.device)
             for i in range(self.block_size)]
 
-        self.z_w_function = nn.Linear(self.hidden_dim*3, self.block_size)
+        self.z_w_function = nn.Linear(self.hidden_dim, self.block_size)
         # observation encoder / decoder
         self.enc_obs = Encoder(feat_size=self.hidden_dim, output_size=self.conv_dim)
         self.dec_obs = Decoder(input_size=self.z_dim,
@@ -92,7 +92,7 @@ class FullQDisentangledVAE(nn.Module):
 
         # init wt
         wt = torch.ones(batch_size, self.block_size).to(self.device)
-        z_fwd_list = [torch.zeros(batch_size, self.hidden_dim).to(self.device) for i in range(self.block_size)]
+        z_fwd_list = [torch.zeros(batch_size, self.hidden_dim//self.block_size).to(self.device) for i in range(self.block_size)]
         for t in range(1, seq_size):
 
             z_post_out = self.z_post_out(lstm_out[:, t])
@@ -117,7 +117,7 @@ class FullQDisentangledVAE(nn.Module):
                 '''
                 z_fwd_list[fwd_t] = self.z_to_c_fwd_list[fwd_t](post_z_1, z_fwd_list[fwd_t],w=wt[:,fwd_t].view(-1,1))
 
-            z_fwd_all = torch.stack(z_fwd_list, dim=2).view(batch_size, self.hidden_dim*self.block_size)
+            z_fwd_all = torch.stack(z_fwd_list, dim=2).view(batch_size, self.hidden_dim)
             # update weight, w0<...<wd<=1, d means block_size
             wt = self.z_w_function(z_fwd_all)
             wt = cumsoftmax(wt)
@@ -165,11 +165,15 @@ def loss_fn(original_seq, recon_seq, zt_1_mean, zt_1_lar,z_post_mean, z_post_log
 
     # compute kl related to states, kl(q(ct|ot,ft)||p(ct|zt-1))
     kld_z0 = -0.5 * torch.sum(1 + zt_1_lar - torch.pow(zt_1_mean, 2) - torch.exp(zt_1_lar))
+    kld_zt = -0.5 * torch.sum(1 + z_post_logvar - torch.pow(z_post_mean, 2) - torch.exp(z_post_logvar))
+    kld_zt_p = -0.5 * torch.sum(1 + z_prior_logvar - torch.pow(z_prior_mean, 2) - torch.exp(z_prior_logvar))
+
     z_post_var = torch.exp(z_post_logvar)
     z_prior_var = torch.exp(z_prior_logvar)
     kld_z = 0.5 * torch.sum(
         z_prior_logvar - z_post_logvar + ((z_post_var + torch.pow(z_post_mean - z_prior_mean, 2)) / z_prior_var) - 1)
-    return (obs_cost + kld_z + kld_z0)/batch_size , (kld_z + kld_z0)/batch_size
+    return (obs_cost + kld_z + kld_z0+ kld_zt)/batch_size , (kld_z + kld_z0 +kld_zt)/batch_size
+    #return (obs_cost + kld_z + kld_z0 + kld_zt + kld_zt_p)/batch_size , (kld_z + kld_z0 + kld_zt+kld_zt_p)/batch_size
 
 
 class Trainer(object):
@@ -235,7 +239,7 @@ class Trainer(object):
             zt_dec.append(zt_1)
             # init wt
             wt = torch.ones(len, self.model.block_size).to(self.device)
-            z_fwd_list = [torch.zeros(len, self.model.hidden_dim).to(self.device) for i in range(self.model.block_size)]
+            z_fwd_list = [torch.zeros(len, self.model.hidden_dim//self.model.block_size).to(self.device) for i in range(self.model.block_size)]
             for t in range(1, self.model.frames):
                 for fwd_t in range(self.model.block_size):
                     # prior over ct of each block, ct_i~p(ct_i|zt-1_i)
@@ -253,7 +257,7 @@ class Trainer(object):
 
                     z_fwd_list[fwd_t] = self.model.z_to_c_fwd_list[fwd_t](zt_1, z_fwd_list[fwd_t], wt[:, fwd_t].view(-1,1))
 
-                z_fwd_all = torch.stack(z_fwd_list, dim=2).view(len, self.model.hidden_dim*self.model.block_size)
+                z_fwd_all = torch.stack(z_fwd_list, dim=2).view(len, self.model.hidden_dim)
                 # update weight, w0<...<wd<=1, d means block_size
                 wt = self.model.z_w_function(z_fwd_all)
                 wt = cumsoftmax(wt)
