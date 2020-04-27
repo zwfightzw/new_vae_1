@@ -53,10 +53,10 @@ class FullQDisentangledVAE(nn.Module):
             GRUCell(input_size=self.z_dim, hidden_size=self.hidden_dim//self.block_size).to(self.device)
             for i in range(self.block_size)]
 
-        self.z_w_function = nn.Linear(self.hidden_dim, self.block_size)
+        self.z_w_function = nn.Sequential(nn.Linear(self.hidden_dim, self.hidden_dim//2),nn.ReLU(), nn.Linear(self.hidden_dim//2, self.block_size))
         # observation encoder / decoder
         self.enc_obs = Encoder(feat_size=self.hidden_dim, output_size=self.conv_dim)
-        self.dec_obs = Decoder(input_size=self.z_dim,
+        self.dec_obs = Decoder(input_size=self.z_dim+self.hidden_dim,
                                feat_size=self.hidden_dim)
 
     def reparameterize(self, mean, logvar, random_sampling=True):
@@ -88,7 +88,9 @@ class FullQDisentangledVAE(nn.Module):
         zt_1_lar = zt_1_post[:, self.z_dim:]
 
         post_z_1 = self.reparameterize(zt_1_mean, zt_1_lar, self.training)
-        zt_obs_list.append(post_z_1)
+        z_fwd = post_z_1.new_zeros(batch_size, self.hidden_dim)
+        cat_ht_zt = torch.cat((z_fwd, post_z_1), dim=1)
+        zt_obs_list.append(cat_ht_zt)
 
         # init wt
         wt = torch.ones(batch_size, self.block_size).to(self.device)
@@ -102,8 +104,6 @@ class FullQDisentangledVAE(nn.Module):
             z_post_mean_list.append(zt_post_mean)
             z_post_lar_list.append(zt_post_lar)
             z_post_sample = self.reparameterize(zt_post_mean, zt_post_lar, self.training)
-            # p(xt|zt)
-            zt_obs_list.append(z_post_sample)
 
             for fwd_t in range(self.block_size):
                 # prior over ct of each block, ct_i~p(ct_i|zt-1_i)
@@ -118,6 +118,11 @@ class FullQDisentangledVAE(nn.Module):
                 z_fwd_list[fwd_t] = self.z_to_c_fwd_list[fwd_t](post_z_1, z_fwd_list[fwd_t],w=wt[:,fwd_t].view(-1,1))
 
             z_fwd_all = torch.stack(z_fwd_list, dim=2).view(batch_size, self.hidden_dim)
+
+            cat_ht_zt = torch.cat((z_fwd_all, z_post_sample), dim=1)
+            # p(xt|zt)
+            zt_obs_list.append(cat_ht_zt)
+
             # update weight, w0<...<wd<=1, d means block_size
             wt = self.z_w_function(z_fwd_all)
             wt = cumsoftmax(wt)
@@ -230,7 +235,10 @@ class Trainer(object):
             #zt_1 = [Normal(torch.zeros(self.model.z_dim).to(self.device), torch.ones(self.model.z_dim).to(self.device)).rsample() for i in range(len)]
             #zt_1 = torch.stack(zt_1, dim=0)
 
-            zt_dec.append(zt_1)
+            z_fwd = zt_1.new_zeros(len, self.model.hidden_dim)
+            cat_ht_zt = torch.cat((z_fwd, zt_1), dim=1)
+            zt_dec.append(cat_ht_zt)
+
             # init wt
             wt = torch.ones(len, self.model.block_size).to(self.device)
             z_fwd_list = [torch.zeros(len, self.model.hidden_dim//self.model.block_size).to(self.device) for i in range(self.model.block_size)]
@@ -252,6 +260,7 @@ class Trainer(object):
                     z_fwd_list[fwd_t] = self.model.z_to_c_fwd_list[fwd_t](zt_1, z_fwd_list[fwd_t], wt[:, fwd_t].view(-1,1))
 
                 z_fwd_all = torch.stack(z_fwd_list, dim=2).view(len, self.model.hidden_dim)
+
                 # update weight, w0<...<wd<=1, d means block_size
                 wt = self.model.z_w_function(z_fwd_all)
                 wt = cumsoftmax(wt)
@@ -267,7 +276,9 @@ class Trainer(object):
 
                 # store the prior of ct_i
                 zt = self.model.reparameterize(z_fwd_latent_mean, z_fwd_latent_lar, self.model.training)
-                zt_dec.append(zt)
+                cat_ht_zt = torch.cat((z_fwd_all, zt), dim=1)
+                zt_dec.append(cat_ht_zt)
+
                 # decode observation
                 zt_1 = zt
 
@@ -337,7 +348,7 @@ if __name__ == '__main__':
 
     # optimization
     parser.add_argument('--learn-rate', type=float, default=0.0005)
-    parser.add_argument('--grad-clip', type=float, default=0.0)
+    parser.add_argument('--grad-clip', type=float, default=0.25)
     parser.add_argument('--max-epochs', type=int, default=300)
     parser.add_argument('--gpu_id', type=int, default=1)
 
