@@ -5,7 +5,6 @@ import torch.nn.functional as F
 class GRUCell(nn.Module):
     """
     An implementation of GRUCell.
-
     """
 
     def __init__(self, input_size, hidden_size, bias=True):
@@ -15,7 +14,7 @@ class GRUCell(nn.Module):
         self.bias = bias
         self.x2h = nn.Linear(input_size, 3 * hidden_size, bias=bias)
         self.h2h = nn.Linear(hidden_size, 3 * hidden_size, bias=bias)
-        #self.reset_parameters()
+        self.reset_parameters()
 
     def reset_parameters(self):
         std = 1.0 / math.sqrt(self.hidden_size)

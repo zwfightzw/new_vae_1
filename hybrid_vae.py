@@ -76,7 +76,6 @@ class FullQDisentangledVAE(nn.Module):
 
         batch_size = lstm_out.shape[0]
         seq_size = lstm_out.shape[1]
-        each_block_size = self.z_dim // self.block_size
 
         z_post_mean_list = []
         z_post_lar_list = []
@@ -118,7 +117,7 @@ class FullQDisentangledVAE(nn.Module):
                 '''
                 z_fwd_list[fwd_t] = self.z_to_c_fwd_list[fwd_t](post_z_1, z_fwd_list[fwd_t],w=wt[:,fwd_t].view(-1,1))
 
-            z_fwd_all = torch.stack(z_fwd_list, dim=2).sum(dim=2).view(batch_size, self.hidden_dim)
+            z_fwd_all = torch.stack(z_fwd_list, dim=2).mean(dim=2).view(batch_size, self.hidden_dim)
 
             cat_ht_zt = torch.cat((z_fwd_all, z_post_sample), dim=1)
             # p(xt|zt)
@@ -273,7 +272,7 @@ class Trainer(object):
                 #wt = self.model.z_w_function(z_fwd_all)
                 #wt = cumsoftmax(wt)
 
-                z_prior_fwd = self.model.z_prior_out_list(z_fwd_all)
+                z_prior_fwd = self.model.z_prior_out_list(z_fwd_list[0])
                 z_fwd_latent_mean = z_prior_fwd[:, :self.model.z_dim]
                 z_fwd_latent_lar = z_prior_fwd[:, self.model.z_dim :]
 

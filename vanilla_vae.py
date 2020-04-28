@@ -129,7 +129,7 @@ class FullQDisentangledVAE(nn.Module):
 
 def loss_fn(original_seq, recon_seq, zt_1_mean, zt_1_lar,z_post_mean, z_post_logvar, z_prior_mean, z_prior_logvar):
 
-    obs_cost = F.binary_cross_entropy(recon_seq, original_seq,reduction='sum')   #binary_cross_entropy
+    obs_cost = F.binary_cross_entropy(recon_seq, original_seq, size_average=False)  #binary_cross_entropy
     batch_size = recon_seq.shape[0]
 
     # compute kl related to states, kl(q(ct|ot,ft)||p(ct|zt-1))
