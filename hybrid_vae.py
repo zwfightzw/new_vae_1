@@ -47,10 +47,11 @@ class FullQDisentangledVAE(nn.Module):
         self.z_rnn = nn.RNN(self.hidden_dim * 2, self.hidden_dim, batch_first=True)
         self.z_post_out = nn.Linear(self.hidden_dim, self.z_dim * 2)
 
-        self.z_prior_out_list = [nn.Linear(self.hidden_dim//self.block_size, self.z_dim * 2//self.block_size).to(device) for i in range(self.block_size)]
+        #self.z_prior_out_list = [nn.Linear(self.hidden_dim//self.block_size, self.z_dim * 2//self.block_size).to(device) for i in range(self.block_size)]
+        self.z_prior_out_list =  nn.Linear(self.hidden_dim, self.z_dim * 2).to(device)
 
         self.z_to_c_fwd_list = [
-            GRUCell(input_size=self.z_dim, hidden_size=self.hidden_dim//self.block_size).to(self.device)
+            GRUCell(input_size=self.z_dim, hidden_size=self.hidden_dim).to(self.device)
             for i in range(self.block_size)]
 
         self.z_w_function = nn.Sequential(nn.Linear(self.hidden_dim, self.hidden_dim//2),nn.ReLU(), nn.Linear(self.hidden_dim//2, self.block_size))
@@ -94,7 +95,7 @@ class FullQDisentangledVAE(nn.Module):
 
         # init wt
         wt = torch.ones(batch_size, self.block_size).to(self.device)
-        z_fwd_list = [torch.zeros(batch_size, self.hidden_dim//self.block_size).to(self.device) for i in range(self.block_size)]
+        z_fwd_list = [torch.zeros(batch_size, self.hidden_dim).to(self.device) for i in range(self.block_size)]
         for t in range(1, seq_size):
 
             z_post_out = self.z_post_out(lstm_out[:, t])
@@ -117,16 +118,21 @@ class FullQDisentangledVAE(nn.Module):
                 '''
                 z_fwd_list[fwd_t] = self.z_to_c_fwd_list[fwd_t](post_z_1, z_fwd_list[fwd_t],w=wt[:,fwd_t].view(-1,1))
 
-            z_fwd_all = torch.stack(z_fwd_list, dim=2).view(batch_size, self.hidden_dim)
+            z_fwd_all = torch.stack(z_fwd_list, dim=2).sum(dim=2).view(batch_size, self.hidden_dim)
 
             cat_ht_zt = torch.cat((z_fwd_all, z_post_sample), dim=1)
             # p(xt|zt)
             zt_obs_list.append(cat_ht_zt)
 
             # update weight, w0<...<wd<=1, d means block_size
-            wt = self.z_w_function(z_fwd_all)
-            wt = cumsoftmax(wt)
+            #wt = self.z_w_function(z_fwd_all)
+            #wt = cumsoftmax(wt)
 
+            z_prior_fwd = self.z_prior_out_list(z_fwd_all)
+            z_fwd_latent_mean = z_prior_fwd[:, :self.z_dim]
+            z_fwd_latent_lar = z_prior_fwd[:, self.z_dim:]
+
+            '''
             for i in range(self.block_size):
                 z_prior_fwd = self.z_prior_out_list[i](z_fwd_list[i])
                 if i == 0:
@@ -138,6 +144,7 @@ class FullQDisentangledVAE(nn.Module):
                     z_fwd_latent_lar = concat(
                         z_fwd_latent_lar, z_prior_fwd[:, self.z_dim // self.block_size:])
 
+            '''
             # store the prior of ct_i
             z_prior_mean_list.append(z_fwd_latent_mean)
             z_prior_lar_list.append(z_fwd_latent_lar)
@@ -164,7 +171,7 @@ def cumsoftmax(x, dim=-1):
 
 def loss_fn(original_seq, recon_seq, zt_1_mean, zt_1_lar,z_post_mean, z_post_logvar, z_prior_mean, z_prior_logvar):
 
-    obs_cost = F.binary_cross_entropy(recon_seq, original_seq,reduction='sum')   #binary_cross_entropy
+    obs_cost = F.binary_cross_entropy(recon_seq, original_seq,size_average=False)   #binary_cross_entropy
     batch_size = recon_seq.shape[0]
 
     # compute kl related to states, kl(q(ct|ot,ft)||p(ct|zt-1))
@@ -174,6 +181,7 @@ def loss_fn(original_seq, recon_seq, zt_1_mean, zt_1_lar,z_post_mean, z_post_log
     kld_z = 0.5 * torch.sum(
         z_prior_logvar - z_post_logvar + ((z_post_var + torch.pow(z_post_mean - z_prior_mean, 2)) / z_prior_var) - 1)
     return (obs_cost + kld_z + kld_z0)/batch_size , (kld_z + kld_z0)/batch_size
+
 
 class Trainer(object):
     def __init__(self, model, device, train, test, epochs, batch_size, learning_rate, nsamples,
@@ -241,7 +249,7 @@ class Trainer(object):
 
             # init wt
             wt = torch.ones(len, self.model.block_size).to(self.device)
-            z_fwd_list = [torch.zeros(len, self.model.hidden_dim//self.model.block_size).to(self.device) for i in range(self.model.block_size)]
+            z_fwd_list = [torch.zeros(len, self.model.hidden_dim).to(self.device) for i in range(self.model.block_size)]
             for t in range(1, self.model.frames):
                 for fwd_t in range(self.model.block_size):
                     # prior over ct of each block, ct_i~p(ct_i|zt-1_i)
@@ -259,12 +267,17 @@ class Trainer(object):
 
                     z_fwd_list[fwd_t] = self.model.z_to_c_fwd_list[fwd_t](zt_1, z_fwd_list[fwd_t], wt[:, fwd_t].view(-1,1))
 
-                z_fwd_all = torch.stack(z_fwd_list, dim=2).view(len, self.model.hidden_dim)
+                z_fwd_all = torch.stack(z_fwd_list, dim=2).sum(dim=2).view(len, self.model.hidden_dim)
 
                 # update weight, w0<...<wd<=1, d means block_size
-                wt = self.model.z_w_function(z_fwd_all)
-                wt = cumsoftmax(wt)
+                #wt = self.model.z_w_function(z_fwd_all)
+                #wt = cumsoftmax(wt)
 
+                z_prior_fwd = self.model.z_prior_out_list(z_fwd_all)
+                z_fwd_latent_mean = z_prior_fwd[:, :self.model.z_dim]
+                z_fwd_latent_lar = z_prior_fwd[:, self.model.z_dim :]
+
+                '''
                 for i in range(self.model.block_size):
                     z_prior_fwd = self.model.z_prior_out_list[i](z_fwd_list[i])
                     if i == 0:
@@ -274,6 +287,7 @@ class Trainer(object):
                         z_fwd_latent_mean = concat(z_fwd_latent_mean, z_prior_fwd[:, :self.model.z_dim//self.model.block_size])
                         z_fwd_latent_lar = concat(z_fwd_latent_lar, z_prior_fwd[:, self.model.z_dim//self.model.block_size:])
 
+                '''
                 # store the prior of ct_i
                 zt = self.model.reparameterize(z_fwd_latent_mean, z_fwd_latent_lar, self.model.training)
                 cat_ht_zt = torch.cat((z_fwd_all, zt), dim=1)
@@ -348,7 +362,7 @@ if __name__ == '__main__':
 
     # optimization
     parser.add_argument('--learn-rate', type=float, default=0.0005)
-    parser.add_argument('--grad-clip', type=float, default=0.25)
+    parser.add_argument('--grad-clip', type=float, default=0.0)
     parser.add_argument('--max-epochs', type=int, default=300)
     parser.add_argument('--gpu_id', type=int, default=1)
 
