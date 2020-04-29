@@ -48,10 +48,9 @@ class FullQDisentangledVAE(nn.Module):
         self.z_post_out = nn.Linear(self.hidden_dim, self.z_dim * 2)
 
         #self.z_prior_out_list = [nn.Linear(self.hidden_dim//self.block_size, self.z_dim * 2//self.block_size).to(device) for i in range(self.block_size)]
-        self.z_prior_out_list =  nn.Linear(self.hidden_dim, self.z_dim * 2).to(device)
+        self.z_prior_out_list =  nn.Sequential(nn.Linear(self.hidden_dim, self.hidden_dim//2), nn.ReLU(), nn.Linear(self.hidden_dim//2, self.z_dim * 2).to(device))
 
-        self.z_to_c_fwd_list = [
-            GRUCell(input_size=self.z_dim, hidden_size=self.hidden_dim).to(self.device)
+        self.z_to_c_fwd_list = [GRUCell(input_size=self.z_dim, hidden_size=self.hidden_dim).to(self.device)
             for i in range(self.block_size)]
 
         self.z_w_function = nn.Sequential(nn.Linear(self.hidden_dim, self.hidden_dim//2),nn.ReLU(), nn.Linear(self.hidden_dim//2, self.block_size))
@@ -119,8 +118,8 @@ class FullQDisentangledVAE(nn.Module):
             # p(xt|zt)
             zt_obs_list.append(z_post_sample)
             # update weight, w0<...<wd<=1, d means block_size
-            #wt = self.z_w_function(z_fwd_all)
-            #wt = cumsoftmax(wt)
+            wt = self.z_w_function(z_fwd_all)
+            wt = cumsoftmax(wt)
 
             z_prior_fwd = self.z_prior_out_list(z_fwd_all)
             z_fwd_latent_mean = z_prior_fwd[:, :self.z_dim]
@@ -264,8 +263,8 @@ class Trainer(object):
 
                 z_fwd_all = torch.stack(z_fwd_list, dim=2).mean(dim=2).view(len, self.model.hidden_dim)
                 # update weight, w0<...<wd<=1, d means block_size
-                #wt = self.model.z_w_function(z_fwd_all)
-                #wt = cumsoftmax(wt)
+                wt = self.model.z_w_function(z_fwd_all)
+                wt = cumsoftmax(wt)
 
                 z_prior_fwd = self.model.z_prior_out_list(z_fwd_all)
                 z_fwd_latent_mean = z_prior_fwd[:, :self.model.z_dim]
