@@ -53,7 +53,7 @@ class FullQDisentangledVAE(nn.Module):
         self.z_to_c_fwd_list = [GRUCell(input_size=self.z_dim, hidden_size=self.hidden_dim).to(self.device)
             for i in range(self.block_size)]
 
-        self.z_w_function = nn.Sequential(nn.Linear(self.hidden_dim, self.hidden_dim//2),nn.ReLU(), nn.Linear(self.hidden_dim//2, self.block_size))
+        self.z_w_function = nn.Linear(self.hidden_dim, self.block_size) #nn.Sequential(nn.Linear(self.hidden_dim, self.hidden_dim//2),nn.ReLU(), nn.Linear(self.hidden_dim//2, self.block_size))
         # observation encoder / decoder
         self.enc_obs = Encoder(feat_size=self.hidden_dim, output_size=self.conv_dim, channel=channel)
         self.dec_obs = Decoder(input_size=self.z_dim, feat_size=self.hidden_dim, channel=channel)
@@ -341,7 +341,7 @@ if __name__ == '__main__':
     # method
     parser.add_argument('--method', type=str, default='Hybrid')
     # dataset
-    parser.add_argument('--dset_name', type=str, default='lpc')  #moving_mnist, lpc
+    parser.add_argument('--dset_name', type=str, default='moving_mnist')  #moving_mnist, lpc
     # state size
     parser.add_argument('--z-dim', type=int, default=144)  # 72 144
     parser.add_argument('--hidden-dim', type=int, default=252) #  216 252
