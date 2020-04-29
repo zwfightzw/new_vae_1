@@ -119,9 +119,10 @@ class ConvTransLayer2D(nn.Module):
 class Encoder(nn.Module):
     def __init__(self,
                  output_size=None,
-                 feat_size=64):
+                 feat_size=64,
+                 channel=1):
         super(Encoder, self).__init__()
-        network_list = [ConvLayer2D(input_size=1,
+        network_list = [ConvLayer2D(input_size=channel,
                                     output_size=feat_size,
                                     kernel_size=4,
                                     stride=2,
@@ -163,7 +164,8 @@ class Encoder(nn.Module):
 class Decoder(nn.Module):
     def __init__(self,
                  input_size,
-                 feat_size=64):
+                 feat_size=64,
+                 channel=1):
         super(Decoder, self).__init__()
         if input_size == feat_size:
             self.linear = nn.Identity()
@@ -183,7 +185,7 @@ class Decoder(nn.Module):
                                      ConvTransLayer2D(input_size=feat_size,
                                                       output_size=feat_size),
                                      ConvTransLayer2D(input_size=feat_size,
-                                                      output_size=1,
+                                                      output_size=channel,
                                                       normalize=False,
                                                       nonlinear=nn.Sigmoid()))
 

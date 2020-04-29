@@ -33,7 +33,7 @@ class Sprites(torch.utils.data.Dataset):
 
 
 class FullQDisentangledVAE(nn.Module):
-    def __init__(self, frames, z_dim, conv_dim, hidden_dim, device):
+    def __init__(self, frames, z_dim, conv_dim, hidden_dim, channel,device):
         super(FullQDisentangledVAE, self).__init__()
         self.z_dim = z_dim
         self.frames = frames
@@ -55,8 +55,8 @@ class FullQDisentangledVAE(nn.Module):
 
         self.z_w_function = nn.Sequential(nn.Linear(self.hidden_dim, self.hidden_dim//2),nn.ReLU(), nn.Linear(self.hidden_dim//2, self.block_size))
         # observation encoder / decoder
-        self.enc_obs = Encoder(feat_size=self.hidden_dim, output_size=self.conv_dim)
-        self.dec_obs = Decoder(input_size=self.z_dim, feat_size=self.hidden_dim)
+        self.enc_obs = Encoder(feat_size=self.hidden_dim, output_size=self.conv_dim, channel=channel)
+        self.dec_obs = Decoder(input_size=self.z_dim, feat_size=self.hidden_dim, channel=channel)
 
     def reparameterize(self, mean, logvar, random_sampling=True):
         # Reparametrization occurs only if random sampling is set to true, otherwise mean is returned
@@ -173,8 +173,6 @@ def loss_fn(original_seq, recon_seq, zt_1_mean, zt_1_lar,z_post_mean, z_post_log
     z_post_var = torch.exp(z_post_logvar)
     z_prior_var = torch.exp(z_prior_logvar)
 
-    kld_z_new = kl_divergence(Normal(z_prior_mean, z_prior_var), Normal(z_post_mean, z_post_var)).sum()
-
     kld_z = 0.5 * torch.sum(
         z_prior_logvar - z_post_logvar + ((z_post_var + torch.pow(z_post_mean - z_prior_mean, 2)) / z_prior_var) - 1)
     return (obs_cost + kld_z + kld_z0 )/batch_size , (kld_z + kld_z0)/batch_size
@@ -182,7 +180,7 @@ def loss_fn(original_seq, recon_seq, zt_1_mean, zt_1_lar,z_post_mean, z_post_log
 
 class Trainer(object):
     def __init__(self, model, device, train, test, epochs, batch_size, learning_rate, nsamples,
-                 sample_path, recon_path, checkpoints, log_path, grad_clip):
+                 sample_path, recon_path, checkpoints, log_path, grad_clip, channel):
         self.train = train
         self.test = test
         self.start_epoch = 0
@@ -200,6 +198,7 @@ class Trainer(object):
         self.recon_path = recon_path
         self.log_path = log_path
         self.epoch_losses = []
+        self.channel = channel
 
     def save_checkpoint(self, epoch):
         torch.save({
@@ -290,7 +289,7 @@ class Trainer(object):
 
             zt_dec = torch.stack(zt_dec, dim=1)
             recon_x = self.model.dec_obs(zt_dec.view(len * self.model.frames, -1)).view(len, self.model.frames, -1)
-            recon_x = recon_x.view(len * 8, 1, 64, 64)
+            recon_x = recon_x.view(len * 8, self.channel, 64, 64)
             torchvision.utils.save_image(recon_x, '%s/epoch%d.png' % (self.sample_path, epoch))
 
     def recon_frame(self, epoch, original):
@@ -298,7 +297,7 @@ class Trainer(object):
             _, _, _, _, _, _,_, recon = self.model(original)
             image = torch.cat((original, recon), dim=0)
             print(image.shape)
-            image = image.view(16, 1, 64, 64)
+            image = image.view(16, channel, 64, 64)
             torchvision.utils.save_image(image, '%s/epoch%d.png' % (self.recon_path, epoch))
 
     def train_model(self):
@@ -342,7 +341,7 @@ if __name__ == '__main__':
     # method
     parser.add_argument('--method', type=str, default='Hybrid')
     # dataset
-    parser.add_argument('--dset_name', type=str, default='moving_mnist')
+    parser.add_argument('--dset_name', type=str, default='lpc')  #moving_mnist, lpc
     # state size
     parser.add_argument('--z-dim', type=int, default=144)  # 72 144
     parser.add_argument('--hidden-dim', type=int, default=252) #  216 252
@@ -364,10 +363,18 @@ if __name__ == '__main__':
     torch.cuda.manual_seed(FLAGS.seed)
     device = torch.device('cuda:%d' % (FLAGS.gpu_id) if torch.cuda.is_available() else 'cpu')
 
-    vae = FullQDisentangledVAE(frames=FLAGS.frame_size, z_dim=FLAGS.z_dim, hidden_dim=FLAGS.hidden_dim, conv_dim=FLAGS.conv_dim, device=device)
+    if FLAGS.dset_name == 'lpc':
+        sprite = Sprites('./dataset/lpc-dataset/train/', 6687)
+        sprite_test = Sprites('./dataset/lpc-dataset/test/', 873)
+        train_loader = torch.utils.data.DataLoader(sprite, batch_size=25, shuffle=True, num_workers=4)
+        test_loader = torch.utils.data.DataLoader(sprite_test, batch_size=1, shuffle=FLAGS, num_workers=4)
+        channel = 3
+    elif FLAGS.dset_name == 'moving_mnist':
+        FLAGS.dset_path = os.path.join('./datasets', FLAGS.dset_name)
+        train_loader, test_loader = data.get_data_loader(FLAGS, True)
+        channel = 1
 
-    FLAGS.dset_path = os.path.join('./datasets', FLAGS.dset_name)
-    train_loader, test_loader = data.get_data_loader(FLAGS, True)
+    vae = FullQDisentangledVAE(frames=FLAGS.frame_size, z_dim=FLAGS.z_dim, hidden_dim=FLAGS.hidden_dim, conv_dim=FLAGS.conv_dim, channel=channel,device=device)
 
     starttime = datetime.datetime.now()
     now = datetime.datetime.now(dateutil.tz.tzlocal())
@@ -391,7 +398,7 @@ if __name__ == '__main__':
                       learning_rate=FLAGS.learn_rate,
                       checkpoints='%s/%s-disentangled-vae.model' % (model_path, FLAGS.method), nsamples=FLAGS.nsamples,
                       sample_path=log_sample,
-                      recon_path=log_recon, log_path=log_path, grad_clip=FLAGS.grad_clip)
+                      recon_path=log_recon, log_path=log_path, grad_clip=FLAGS.grad_clip, channel=channel)
     #trainer.load_checkpoint()
     trainer.train_model()
     endtime = datetime.datetime.now()
