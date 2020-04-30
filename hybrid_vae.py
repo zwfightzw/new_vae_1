@@ -33,7 +33,7 @@ class Sprites(torch.utils.data.Dataset):
 
 
 class FullQDisentangledVAE(nn.Module):
-    def __init__(self, frames, z_dim, conv_dim, hidden_dim, channel,device):
+    def __init__(self, frames, z_dim, conv_dim, hidden_dim, channel, dataset, device):
         super(FullQDisentangledVAE, self).__init__()
         self.z_dim = z_dim
         self.frames = frames
@@ -41,6 +41,7 @@ class FullQDisentangledVAE(nn.Module):
         self.hidden_dim = hidden_dim
         self.block_size = 3
         self.device = device
+        self.dataset = dataset
 
         self.z_lstm = nn.LSTM(self.conv_dim, self.hidden_dim, 1,
                               bidirectional=True, batch_first=True)
@@ -56,7 +57,7 @@ class FullQDisentangledVAE(nn.Module):
         self.z_w_function = nn.Linear(self.hidden_dim, self.block_size) #nn.Sequential(nn.Linear(self.hidden_dim, self.hidden_dim//2),nn.ReLU(), nn.Linear(self.hidden_dim//2, self.block_size))
         # observation encoder / decoder
         self.enc_obs = Encoder(feat_size=self.hidden_dim, output_size=self.conv_dim, channel=channel)
-        self.dec_obs = Decoder(input_size=self.z_dim, feat_size=self.hidden_dim, channel=channel)
+        self.dec_obs = Decoder(input_size=self.z_dim, feat_size=self.hidden_dim, channel=channel, dataset=dataset)
 
     def reparameterize(self, mean, logvar, random_sampling=True):
         # Reparametrization occurs only if random sampling is set to true, otherwise mean is returned
@@ -162,11 +163,13 @@ class FullQDisentangledVAE(nn.Module):
 def cumsoftmax(x, dim=-1):
     return torch.cumsum(F.softmax(x, dim=dim), dim=dim)
 
-def loss_fn(original_seq, recon_seq, zt_1_mean, zt_1_lar,z_post_mean, z_post_logvar, z_prior_mean, z_prior_logvar):
+def loss_fn(dataset, original_seq, recon_seq, zt_1_mean, zt_1_lar,z_post_mean, z_post_logvar, z_prior_mean, z_prior_logvar):
 
-    obs_cost = F.binary_cross_entropy(recon_seq, original_seq,size_average=False)   #binary_cross_entropy
+    if dataset == 'lpc':
+        obs_cost = F.mse_loss(recon_seq,original_seq, size_average=False)
+    elif dataset == 'moving_mnist':
+        obs_cost = F.binary_cross_entropy(recon_seq, original_seq, size_average=False)  #binary_cross_entropy
     batch_size = recon_seq.shape[0]
-
     # compute kl related to states, kl(q(ct|ot,ft)||p(ct|zt-1))
     kld_z0 = -0.5 * torch.sum(1 + zt_1_lar - torch.pow(zt_1_mean, 2) - torch.exp(zt_1_lar))
 
@@ -313,7 +316,7 @@ class Trainer(object):
                 data = data.to(self.device)
                 self.optimizer.zero_grad()
                 zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, z, recon_x = self.model(data)
-                loss, kl = loss_fn(data, recon_x, zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar)
+                loss, kl = loss_fn(self.model.dataset, data, recon_x, zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar)
                 write_log('mse loss is %f, kl loss is %f'%(loss, kl), self.log_path)
                 if self.grad_clip > 0.0:
                     nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
@@ -347,7 +350,7 @@ if __name__ == '__main__':
     parser.add_argument('--hidden-dim', type=int, default=252) #  216 252
     parser.add_argument('--conv-dim', type=int, default=256)  # 256 512
     # data size
-    parser.add_argument('--batch-size', type=int, default=64)
+    parser.add_argument('--batch-size', type=int, default=32)
     parser.add_argument('--frame-size', type=int, default=8)
     parser.add_argument('--nsamples', type=int, default=2)
 
@@ -366,7 +369,7 @@ if __name__ == '__main__':
     if FLAGS.dset_name == 'lpc':
         sprite = Sprites('./dataset/lpc-dataset/train/', 6687)
         sprite_test = Sprites('./dataset/lpc-dataset/test/', 873)
-        train_loader = torch.utils.data.DataLoader(sprite, batch_size=25, shuffle=True, num_workers=4)
+        train_loader = torch.utils.data.DataLoader(sprite, batch_size=FLAGS.batch_size, shuffle=True, num_workers=4)
         test_loader = torch.utils.data.DataLoader(sprite_test, batch_size=1, shuffle=FLAGS, num_workers=4)
         channel = 3
     elif FLAGS.dset_name == 'moving_mnist':
@@ -374,12 +377,12 @@ if __name__ == '__main__':
         train_loader, test_loader = data.get_data_loader(FLAGS, True)
         channel = 1
 
-    vae = FullQDisentangledVAE(frames=FLAGS.frame_size, z_dim=FLAGS.z_dim, hidden_dim=FLAGS.hidden_dim, conv_dim=FLAGS.conv_dim, channel=channel,device=device)
+    vae = FullQDisentangledVAE(frames=FLAGS.frame_size, z_dim=FLAGS.z_dim, hidden_dim=FLAGS.hidden_dim, conv_dim=FLAGS.conv_dim, channel=channel, dataset=FLAGS.dset_name, device=device)
 
     starttime = datetime.datetime.now()
     now = datetime.datetime.now(dateutil.tz.tzlocal())
     time_dir = now.strftime('%Y_%m_%d_%H_%M_%S')
-    base_path = './%s/%s'%(FLAGS.method, time_dir)
+    base_path = './%s/%s/%s'%(FLAGS.dset_name, FLAGS.method, time_dir)
     model_path = '%s/model' % (base_path)
     log_recon = '%s/recon' % (base_path)
     log_sample = '%s/sample' % (base_path)

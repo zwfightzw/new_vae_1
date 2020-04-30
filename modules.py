@@ -165,7 +165,7 @@ class Decoder(nn.Module):
     def __init__(self,
                  input_size,
                  feat_size=64,
-                 channel=1):
+                 channel=1, dataset='moving_mnist'):
         super(Decoder, self).__init__()
         if input_size == feat_size:
             self.linear = nn.Identity()
@@ -173,6 +173,10 @@ class Decoder(nn.Module):
             self.linear = LinearLayer(input_size=input_size,
                                       output_size=feat_size,
                                       nonlinear=nn.Identity())
+        if dataset == 'moving_mnist':
+            nolinear_dataset = nn.Sigmoid()
+        elif dataset == 'lpc':
+            nolinear_dataset = nn.Tanh()
         self.network = nn.Sequential(ConvTransLayer2D(input_size=feat_size,
                                                       output_size=feat_size,
                                                       kernel_size=4,
@@ -187,7 +191,7 @@ class Decoder(nn.Module):
                                      ConvTransLayer2D(input_size=feat_size,
                                                       output_size=channel,
                                                       normalize=False,
-                                                      nonlinear=nn.Sigmoid()))
+                                                      nonlinear=nolinear_dataset))
 
     def forward(self, input_data):
         return self.network(self.linear(input_data).unsqueeze(-1).unsqueeze(-1))
