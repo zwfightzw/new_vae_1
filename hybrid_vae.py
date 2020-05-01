@@ -33,7 +33,7 @@ class Sprites(torch.utils.data.Dataset):
 
 
 class FullQDisentangledVAE(nn.Module):
-    def __init__(self, frames, z_dim, conv_dim, hidden_dim, channel, dataset, device):
+    def __init__(self, temperature, frames, z_dim, conv_dim, hidden_dim, channel, dataset, device):
         super(FullQDisentangledVAE, self).__init__()
         self.z_dim = z_dim
         self.frames = frames
@@ -42,6 +42,7 @@ class FullQDisentangledVAE(nn.Module):
         self.block_size = 3
         self.device = device
         self.dataset = dataset
+        self.temperature = temperature
 
         self.z_lstm = nn.LSTM(self.conv_dim, self.hidden_dim, 1,
                               bidirectional=True, batch_first=True)
@@ -54,7 +55,7 @@ class FullQDisentangledVAE(nn.Module):
         self.z_to_c_fwd_list = [GRUCell(input_size=self.z_dim, hidden_size=self.hidden_dim//self.block_size).to(self.device)
             for i in range(self.block_size)]
 
-        self.z_w_function = nn.Linear(self.hidden_dim, self.block_size) #nn.Sequential(nn.Linear(self.hidden_dim, self.hidden_dim//2),nn.ReLU(), nn.Linear(self.hidden_dim//2, self.block_size))
+        self.z_w_function = nn.Linear(self.hidden_dim+ self.z_dim, self.z_dim) #nn.Sequential(nn.Linear(self.hidden_dim, self.hidden_dim//2),nn.ReLU(), nn.Linear(self.hidden_dim//2, self.block_size))
         # observation encoder / decoder
         self.enc_obs = Encoder(feat_size=self.hidden_dim, output_size=self.conv_dim, channel=channel)
         self.dec_obs = Decoder(input_size=self.z_dim, feat_size=self.hidden_dim, channel=channel, dataset=dataset)
@@ -76,6 +77,8 @@ class FullQDisentangledVAE(nn.Module):
         batch_size = lstm_out.shape[0]
         seq_size = lstm_out.shape[1]
 
+        each_block_size = self.z_dim//self.block_size
+
         z_post_mean_list = []
         z_post_lar_list = []
         z_prior_mean_list = []
@@ -87,7 +90,6 @@ class FullQDisentangledVAE(nn.Module):
         zt_1_lar = zt_1_post[:, self.z_dim:]
 
         post_z_1 = self.reparameterize(zt_1_mean, zt_1_lar, self.training)
-        z_fwd = post_z_1.new_zeros(batch_size, self.hidden_dim)
         zt_obs_list.append(post_z_1)
 
         # init wt
@@ -105,22 +107,25 @@ class FullQDisentangledVAE(nn.Module):
 
             for fwd_t in range(self.block_size):
                 # prior over ct of each block, ct_i~p(ct_i|zt-1_i)
-                '''
                 if fwd_t==0:
-                    zt_1_tmp = concat(post_z_1[:, fwd_t * each_block_size:(fwd_t + 2) * each_block_size], torch.zeros(batch_size, self.z_dim//self.block_size).to(self.device))
+                    zt_1_tmp = concat(post_z_1[:, 0 * each_block_size:1 * each_block_size], torch.zeros(batch_size, 2*each_block_size).to(self.device))
                 if fwd_t==1:
-                    zt_1_tmp = post_z_1
+                    zt_1_tmp = concat(post_z_1[:, 0 * each_block_size: 2 * each_block_size], torch.zeros(batch_size, each_block_size).to(self.device))
                 if fwd_t==2:
-                    zt_1_tmp = concat(torch.zeros(batch_size, self.z_dim//self.block_size).to(self.device),post_z_1[:, (fwd_t-1) * each_block_size:(fwd_t + 1) * each_block_size])
-                '''
-                z_fwd_list[fwd_t] = self.z_to_c_fwd_list[fwd_t](post_z_1, z_fwd_list[fwd_t],w=wt[:,fwd_t].view(-1,1))
+                    zt_1_tmp = concat(torch.zeros(batch_size, each_block_size).to(self.device),post_z_1[:, 1 * each_block_size:3 * each_block_size])
+                z_fwd_list[fwd_t] = self.z_to_c_fwd_list[fwd_t](zt_1_tmp, z_fwd_list[fwd_t],w=wt[:,fwd_t].view(-1,1))
 
             z_fwd_all = torch.stack(z_fwd_list, dim=2).view(batch_size, self.hidden_dim)  #.mean(dim=2)
             # p(xt|zt)
             zt_obs_list.append(z_post_sample)
             # update weight, w0<...<wd<=1, d means block_size
-            wt = self.z_w_function(z_fwd_all)
+            wt = self.z_w_function(concat(z_fwd_all,z_post_sample))
             wt = cumsoftmax(wt)
+            wt = torch.log(wt) / self.temperature
+            wt = torch.exp(wt)
+            wt = wt / wt.sum(dim=1).view(-1,1)
+            wt = wt.reshape(batch_size, self.block_size, each_block_size)
+            wt = wt.sum(dim=2)
 
             z_prior_fwd = self.z_prior_out_list(z_fwd_all)
             z_fwd_latent_mean = z_prior_fwd[:, :self.z_dim]
@@ -249,24 +254,21 @@ class Trainer(object):
             for t in range(1, self.model.frames):
                 for fwd_t in range(self.model.block_size):
                     # prior over ct of each block, ct_i~p(ct_i|zt-1_i)
-                    '''
                     if fwd_t == 0:
-                        zt_1_tmp = concat(zt_1[:, fwd_t * each_block_size:(fwd_t + 2) * each_block_size],
-                                          torch.zeros(len, self.model.z_dim // self.model.block_size).to(self.device))
+                        zt_1_tmp = concat(zt_1[:, 0 * each_block_size:1 * each_block_size],
+                                          torch.zeros(len, 2 * each_block_size).to(self.device))
                     if fwd_t == 1:
-                        zt_1_tmp = zt_1
+                        zt_1_tmp = concat(zt_1[:, 0 * each_block_size: 2 * each_block_size],
+                                          torch.zeros(len, each_block_size).to(self.device))
                     if fwd_t == 2:
-                        zt_1_tmp = concat(torch.zeros(len, self.model.z_dim//self.model.block_size).to(self.device),
-                                          zt_1[:, (fwd_t - 1) * each_block_size:(fwd_t + 1) * each_block_size])
-                                          
-                    '''
+                        zt_1_tmp = concat(torch.zeros(len, each_block_size).to(self.device),
+                                          zt_1[:, 1 * each_block_size:3 * each_block_size])
+                    z_fwd_list[fwd_t] = self.model.z_to_c_fwd_list[fwd_t](zt_1_tmp, z_fwd_list[fwd_t],
+                                                                    w=wt[:, fwd_t].view(-1, 1))
 
-                    z_fwd_list[fwd_t] = self.model.z_to_c_fwd_list[fwd_t](zt_1, z_fwd_list[fwd_t], wt[:, fwd_t].view(-1,1))
 
                 z_fwd_all = torch.stack(z_fwd_list, dim=2).view(len, self.model.hidden_dim)  #.mean(dim=2)
                 # update weight, w0<...<wd<=1, d means block_size
-                wt = self.model.z_w_function(z_fwd_all)
-                wt = cumsoftmax(wt)
 
                 z_prior_fwd = self.model.z_prior_out_list(z_fwd_all)
                 z_fwd_latent_mean = z_prior_fwd[:, :self.model.z_dim]
@@ -287,6 +289,13 @@ class Trainer(object):
                 zt = self.model.reparameterize(z_fwd_latent_mean, z_fwd_latent_lar, self.model.training)
                 zt_dec.append(zt)
 
+                wt = self.model.z_w_function(concat(z_fwd_all, zt))
+                wt = cumsoftmax(wt)
+                wt = torch.log(wt)/self.model.temperature
+                wt = torch.exp(wt)
+                wt = wt / wt.sum(dim=1)
+                wt = wt.reshape(len, self.model.block_size, each_block_size)
+                wt = wt.sum(dim=2)
                 # decode observation
                 zt_1 = zt
 
@@ -356,6 +365,7 @@ if __name__ == '__main__':
 
     # optimization
     parser.add_argument('--learn-rate', type=float, default=0.0005)
+    parser.add_argument('--temperature', type=float, default=1.0)
     parser.add_argument('--grad-clip', type=float, default=0.0)
     parser.add_argument('--max-epochs', type=int, default=300)
     parser.add_argument('--gpu_id', type=int, default=1)
@@ -377,7 +387,7 @@ if __name__ == '__main__':
         train_loader, test_loader = data.get_data_loader(FLAGS, True)
         channel = 1
 
-    vae = FullQDisentangledVAE(frames=FLAGS.frame_size, z_dim=FLAGS.z_dim, hidden_dim=FLAGS.hidden_dim, conv_dim=FLAGS.conv_dim, channel=channel, dataset=FLAGS.dset_name, device=device)
+    vae = FullQDisentangledVAE(temperature=FLAGS.temperature, frames=FLAGS.frame_size, z_dim=FLAGS.z_dim, hidden_dim=FLAGS.hidden_dim, conv_dim=FLAGS.conv_dim, channel=channel, dataset=FLAGS.dset_name, device=device)
 
     starttime = datetime.datetime.now()
     now = datetime.datetime.now(dateutil.tz.tzlocal())
