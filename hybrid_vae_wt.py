@@ -11,14 +11,17 @@ import dateutil.tz
 import argparse
 import data
 
+
 def write_log(log, log_path):
     f = open(log_path, mode='a')
     f.write(str(log))
     f.write('\n')
     f.close()
 
+
 def concat(*data_list):
     return torch.cat(data_list, 1)
+
 
 class Sprites(torch.utils.data.Dataset):
     def __init__(self, path, size):
@@ -48,13 +51,15 @@ class FullQDisentangledVAE(nn.Module):
         self.z_rnn = nn.RNN(self.hidden_dim * 2, self.hidden_dim, batch_first=True)
         self.z_post_out = nn.Linear(self.hidden_dim, self.z_dim * 2)
 
-        #self.z_prior_out_list = [nn.Linear(self.hidden_dim//self.block_size, self.z_dim * 2//self.block_size).to(device) for i in range(self.block_size)]
-        self.z_prior_out_list =  nn.Sequential(nn.Linear(self.hidden_dim, self.hidden_dim//2), nn.ReLU(), nn.Linear(self.hidden_dim//2, self.z_dim * 2).to(device))
+        # self.z_prior_out_list = [nn.Linear(self.hidden_dim//self.block_size, self.z_dim * 2//self.block_size).to(device) for i in range(self.block_size)]
+        self.z_prior_out_list = nn.Sequential(nn.Linear(self.hidden_dim, self.hidden_dim // 2), nn.ReLU(),
+                                              nn.Linear(self.hidden_dim // 2, self.z_dim * 2).to(device))
 
         self.z_to_c_fwd_list = [GRUCell(input_size=self.z_dim, hidden_size=self.hidden_dim//self.block_size).to(self.device)
-            for i in range(self.block_size)]
+                                for i in range(self.block_size)]
 
-        self.z_w_function = nn.Linear(self.hidden_dim, self.block_size) #nn.Sequential(nn.Linear(self.hidden_dim, self.hidden_dim//2),nn.ReLU(), nn.Linear(self.hidden_dim//2, self.block_size))
+        self.z_w_function = nn.Linear(self.hidden_dim,
+                                      self.hidden_dim)  # nn.Sequential(nn.Linear(self.hidden_dim, self.hidden_dim//2),nn.ReLU(), nn.Linear(self.hidden_dim//2, self.block_size))
         # observation encoder / decoder
         self.enc_obs = Encoder(feat_size=self.hidden_dim, output_size=self.conv_dim, channel=channel)
         self.dec_obs = Decoder(input_size=self.z_dim, feat_size=self.hidden_dim, channel=channel, dataset=dataset)
@@ -91,7 +96,7 @@ class FullQDisentangledVAE(nn.Module):
         zt_obs_list.append(post_z_1)
 
         # init wt
-        wt = torch.ones(batch_size, self.block_size).to(self.device)
+        wt = torch.ones(batch_size, self.hidden_dim).to(self.device)
         z_fwd_list = [torch.zeros(batch_size, self.hidden_dim//self.block_size).to(self.device) for i in range(self.block_size)]
         for t in range(1, seq_size):
 
@@ -113,9 +118,10 @@ class FullQDisentangledVAE(nn.Module):
                 if fwd_t==2:
                     zt_1_tmp = concat(torch.zeros(batch_size, self.z_dim//self.block_size).to(self.device),post_z_1[:, (fwd_t-1) * each_block_size:(fwd_t + 1) * each_block_size])
                 '''
-                z_fwd_list[fwd_t] = self.z_to_c_fwd_list[fwd_t](post_z_1, z_fwd_list[fwd_t],w=wt[:,fwd_t].view(-1,1))
+                z_fwd_list[fwd_t] = self.z_to_c_fwd_list[fwd_t](post_z_1, z_fwd_list[fwd_t],
+                                                                w=wt[:, fwd_t * self.hidden_dim//self.block_size:(fwd_t + 1) * self.hidden_dim//self.block_size])
 
-            z_fwd_all = torch.stack(z_fwd_list, dim=2).view(batch_size, self.hidden_dim)  #.mean(dim=2)
+            z_fwd_all = torch.stack(z_fwd_list, dim=2).view(batch_size, self.hidden_dim)
             # p(xt|zt)
             zt_obs_list.append(z_post_sample)
             # update weight, w0<...<wd<=1, d means block_size
@@ -160,15 +166,17 @@ class FullQDisentangledVAE(nn.Module):
         recon_x = self.dec_obs(z.view(num_samples * seq_len, -1)).view(num_samples, seq_len, *x.size()[2:])
         return zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, z, recon_x
 
+
 def cumsoftmax(x, dim=-1):
     return torch.cumsum(F.softmax(x, dim=dim), dim=dim)
 
-def loss_fn(dataset, original_seq, recon_seq, zt_1_mean, zt_1_lar,z_post_mean, z_post_logvar, z_prior_mean, z_prior_logvar):
 
+def loss_fn(dataset, original_seq, recon_seq, zt_1_mean, zt_1_lar, z_post_mean, z_post_logvar, z_prior_mean,
+            z_prior_logvar):
     if dataset == 'lpc':
-        obs_cost = F.mse_loss(recon_seq,original_seq, size_average=False)
+        obs_cost = F.mse_loss(recon_seq, original_seq, size_average=False)
     elif dataset == 'moving_mnist':
-        obs_cost = F.binary_cross_entropy(recon_seq, original_seq, size_average=False)  #binary_cross_entropy
+        obs_cost = F.binary_cross_entropy(recon_seq, original_seq, size_average=False)  # binary_cross_entropy
     batch_size = recon_seq.shape[0]
     # compute kl related to states, kl(q(ct|ot,ft)||p(ct|zt-1))
     kld_z0 = -0.5 * torch.sum(1 + zt_1_lar - torch.pow(zt_1_mean, 2) - torch.exp(zt_1_lar))
@@ -178,7 +186,7 @@ def loss_fn(dataset, original_seq, recon_seq, zt_1_mean, zt_1_lar,z_post_mean, z
 
     kld_z = 0.5 * torch.sum(
         z_prior_logvar - z_post_logvar + ((z_post_var + torch.pow(z_post_mean - z_prior_mean, 2)) / z_prior_var) - 1)
-    return (obs_cost + kld_z + kld_z0 )/batch_size , (kld_z + kld_z0)/batch_size
+    return (obs_cost + kld_z + kld_z0) / batch_size, (kld_z + kld_z0) / batch_size
 
 
 class Trainer(object):
@@ -229,7 +237,7 @@ class Trainer(object):
             each_block_size = self.model.z_dim // self.model.block_size
             zt_dec = []
             len = sample.shape[0]
-            #len = self.samples
+            # len = self.samples
             x = self.model.enc_obs(sample.view(-1, *sample.size()[2:])).view(1, 8, -1)
             lstm_out, _ = self.model.z_lstm(x)
             lstm_out, _ = self.model.z_rnn(lstm_out)
@@ -239,12 +247,12 @@ class Trainer(object):
             zt_1_lar = zt_1_post[:, self.model.z_dim:]
 
             zt_1 = self.model.reparameterize(zt_1_mean, zt_1_lar, self.model.training)
-            #zt_1 = [Normal(torch.zeros(self.model.z_dim).to(self.device), torch.ones(self.model.z_dim).to(self.device)).rsample() for i in range(len)]
-            #zt_1 = torch.stack(zt_1, dim=0)
+            # zt_1 = [Normal(torch.zeros(self.model.z_dim).to(self.device), torch.ones(self.model.z_dim).to(self.device)).rsample() for i in range(len)]
+            # zt_1 = torch.stack(zt_1, dim=0)
             zt_dec.append(zt_1)
 
             # init wt
-            wt = torch.ones(len, self.model.block_size).to(self.device)
+            wt = torch.ones(len, self.model.hidden_dim).to(self.device)
             z_fwd_list = [torch.zeros(len, self.model.hidden_dim//self.model.block_size).to(self.device) for i in range(self.model.block_size)]
             for t in range(1, self.model.frames):
                 for fwd_t in range(self.model.block_size):
@@ -258,19 +266,20 @@ class Trainer(object):
                     if fwd_t == 2:
                         zt_1_tmp = concat(torch.zeros(len, self.model.z_dim//self.model.block_size).to(self.device),
                                           zt_1[:, (fwd_t - 1) * each_block_size:(fwd_t + 1) * each_block_size])
-                                          
+
                     '''
 
-                    z_fwd_list[fwd_t] = self.model.z_to_c_fwd_list[fwd_t](zt_1, z_fwd_list[fwd_t], wt[:, fwd_t].view(-1,1))
+                    z_fwd_list[fwd_t] = self.model.z_to_c_fwd_list[fwd_t](zt_1, z_fwd_list[fwd_t],
+                                                                          w=wt[:, fwd_t * self.model.hidden_dim//self.model.block_size:(fwd_t + 1) * self.model.hidden_dim//self.model.block_size])
 
-                z_fwd_all = torch.stack(z_fwd_list, dim=2).view(len, self.model.hidden_dim)  #.mean(dim=2)
+                z_fwd_all = torch.stack(z_fwd_list, dim=2).view(len, self.model.hidden_dim)
                 # update weight, w0<...<wd<=1, d means block_size
                 wt = self.model.z_w_function(z_fwd_all)
                 wt = cumsoftmax(wt)
 
                 z_prior_fwd = self.model.z_prior_out_list(z_fwd_all)
                 z_fwd_latent_mean = z_prior_fwd[:, :self.model.z_dim]
-                z_fwd_latent_lar = z_prior_fwd[:, self.model.z_dim :]
+                z_fwd_latent_lar = z_prior_fwd[:, self.model.z_dim:]
 
                 '''
                 for i in range(self.model.block_size):
@@ -297,7 +306,7 @@ class Trainer(object):
 
     def recon_frame(self, epoch, original):
         with torch.no_grad():
-            _, _, _, _, _, _,_, recon = self.model(original)
+            _, _, _, _, _, _, _, recon = self.model(original)
             image = torch.cat((original, recon), dim=0)
             print(image.shape)
             image = image.view(16, channel, 64, 64)
@@ -315,9 +324,11 @@ class Trainer(object):
             for i, data in enumerate(self.train, 1):
                 data = data.to(self.device)
                 self.optimizer.zero_grad()
-                zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, z, recon_x = self.model(data)
-                loss, kl = loss_fn(self.model.dataset, data, recon_x, zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar)
-                write_log('mse loss is %f, kl loss is %f'%(loss, kl), self.log_path)
+                zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, z, recon_x = self.model(
+                    data)
+                loss, kl = loss_fn(self.model.dataset, data, recon_x, zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar,
+                                   prior_zt_mean, prior_zt_lar)
+                write_log('mse loss is %f, kl loss is %f' % (loss, kl), self.log_path)
                 if self.grad_clip > 0.0:
                     nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
                 loss.backward()
@@ -326,9 +337,9 @@ class Trainer(object):
                 losses.append(loss.item())
             meanloss = np.mean(losses)
             klloss = np.mean(kl_loss)
-            self.epoch_losses.append((meanloss,klloss))
+            self.epoch_losses.append((meanloss, klloss))
             write_log("Epoch {} : Average Loss: {}, KL loss :{}".format(epoch + 1, meanloss, klloss), self.log_path)
-            #self.save_checkpoint(epoch)
+            # self.save_checkpoint(epoch)
             self.model.eval()
             sample = iter(self.test).next().to(self.device)
             self.sample_frames(epoch + 1, sample)
@@ -342,12 +353,12 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="hybrid_vae")
     parser.add_argument('--seed', type=int, default=111)
     # method
-    parser.add_argument('--method', type=str, default='Hybrid')
+    parser.add_argument('--method', type=str, default='Hybrid_wt')
     # dataset
-    parser.add_argument('--dset_name', type=str, default='moving_mnist')  #moving_mnist, lpc
+    parser.add_argument('--dset_name', type=str, default='moving_mnist')  # moving_mnist, lpc
     # state size
     parser.add_argument('--z-dim', type=int, default=144)  # 72 144
-    parser.add_argument('--hidden-dim', type=int, default=252) #  216 252
+    parser.add_argument('--hidden-dim', type=int, default=252)  # 216 252
     parser.add_argument('--conv-dim', type=int, default=256)  # 256 512
     # data size
     parser.add_argument('--batch-size', type=int, default=32)
@@ -377,12 +388,13 @@ if __name__ == '__main__':
         train_loader, test_loader = data.get_data_loader(FLAGS, True)
         channel = 1
 
-    vae = FullQDisentangledVAE(frames=FLAGS.frame_size, z_dim=FLAGS.z_dim, hidden_dim=FLAGS.hidden_dim, conv_dim=FLAGS.conv_dim, channel=channel, dataset=FLAGS.dset_name, device=device)
+    vae = FullQDisentangledVAE(frames=FLAGS.frame_size, z_dim=FLAGS.z_dim, hidden_dim=FLAGS.hidden_dim,
+                               conv_dim=FLAGS.conv_dim, channel=channel, dataset=FLAGS.dset_name, device=device)
 
     starttime = datetime.datetime.now()
     now = datetime.datetime.now(dateutil.tz.tzlocal())
     time_dir = now.strftime('%Y_%m_%d_%H_%M_%S')
-    base_path = './%s/%s/%s'%(FLAGS.dset_name, FLAGS.method, time_dir)
+    base_path = './%s/%s/%s' % (FLAGS.dset_name, FLAGS.method, time_dir)
     model_path = '%s/model' % (base_path)
     log_recon = '%s/recon' % (base_path)
     log_sample = '%s/sample' % (base_path)
@@ -403,13 +415,13 @@ if __name__ == '__main__':
                       checkpoints='%s/%s-disentangled-vae.model' % (model_path, FLAGS.method), nsamples=FLAGS.nsamples,
                       sample_path=log_sample,
                       recon_path=log_recon, log_path=log_path, grad_clip=FLAGS.grad_clip, channel=channel)
-    #trainer.load_checkpoint()
+    # trainer.load_checkpoint()
     trainer.train_model()
     endtime = datetime.datetime.now()
     seconds = (endtime - starttime).seconds
     hours = seconds // 3600
-    minutes = (seconds % 3600)//60
-    second = (seconds % 3600)%60
+    minutes = (seconds % 3600) // 60
+    second = (seconds % 3600) % 60
     print((endtime - starttime))
-    timeStr = "running time: " + str(hours)+ 'hours'+ str(minutes) + 'minutes' + str(second) + "second"
+    timeStr = "running time: " + str(hours) + 'hours' + str(minutes) + 'minutes' + str(second) + "second"
     write_log(timeStr, log_path)
