@@ -47,7 +47,9 @@ class FullQDisentangledVAE(nn.Module):
         self.z_lstm = nn.LSTM(self.conv_dim, self.hidden_dim, 1,
                               bidirectional=True, batch_first=True)
         #self.z_rnn = nn.RNN(self.hidden_dim * 2, self.hidden_dim, batch_first=True)
-        self.z_post_out = nn.Linear(self.hidden_dim*2, self.z_dim * 2)
+        self.z_rnn = GRUCell(input_size=self.hidden_dim * 2, hidden_size=self.hidden_dim).to(self.device)
+        self.z_w_post = nn.Linear(self.hidden_dim+ self.z_dim, self.hidden_dim)
+        self.z_post_out = nn.Linear(self.hidden_dim, self.z_dim * 2)
 
         #self.z_prior_out_list = [nn.Linear(self.hidden_dim//self.block_size, self.z_dim * 2//self.block_size).to(device) for i in range(self.block_size)]
         self.z_prior_out_list = nn.Linear(self.hidden_dim, self.z_dim * 2).to(device)
@@ -71,11 +73,12 @@ class FullQDisentangledVAE(nn.Module):
             return mean
 
     def encode_z(self, x):
+        batch_size = x.shape[0]
+        seq_size = x.shape[1]
         lstm_out, _ = self.z_lstm(x)
         #lstm_out, _ = self.z_rnn(lstm_out)
-
-        batch_size = lstm_out.shape[0]
-        seq_size = lstm_out.shape[1]
+        wt_post = torch.ones(batch_size, self.hidden_dim).to(self.device)
+        z_fwd_post = torch.zeros(batch_size, self.hidden_dim).to(self.device)
 
         each_block_size = self.z_dim//self.block_size
 
@@ -84,26 +87,39 @@ class FullQDisentangledVAE(nn.Module):
         z_prior_mean_list = []
         z_prior_lar_list = []
         zt_obs_list = []
-
-        zt_1_post = self.z_post_out(lstm_out[:, 0])
+        z_post_fwd = self.z_rnn(lstm_out[:, 0], z_fwd_post, wt_post)
+        zt_1_post = self.z_post_out(z_post_fwd)
         zt_1_mean = zt_1_post[:, :self.z_dim]
         zt_1_lar = zt_1_post[:, self.z_dim:]
 
         post_z_1 = self.reparameterize(zt_1_mean, zt_1_lar, self.training)
+
+        wt_post = self.z_w_post(concat(z_post_fwd, post_z_1))
+        wt_post = cumsoftmax(wt_post)
+        wt_post = torch.log(wt_post) / self.temperature
+        wt_post = torch.exp(wt_post)
+        wt_post = wt_post / wt_post.sum(dim=1).view(-1, 1)
+
         zt_obs_list.append(post_z_1)
 
         # init wt
         wt = torch.ones(batch_size, self.block_size).to(self.device)
         z_fwd_list = [torch.zeros(batch_size, self.hidden_dim//self.block_size).to(self.device) for i in range(self.block_size)]
         for t in range(1, seq_size):
-
-            z_post_out = self.z_post_out(lstm_out[:, t])
+            z_post_fwd = self.z_rnn(lstm_out[:, t], z_fwd_post, wt_post)
+            z_post_out = self.z_post_out(z_post_fwd)
             zt_post_mean = z_post_out[:, :self.z_dim]
             zt_post_lar = z_post_out[:, self.z_dim:]
 
             z_post_mean_list.append(zt_post_mean)
             z_post_lar_list.append(zt_post_lar)
             z_post_sample = self.reparameterize(zt_post_mean, zt_post_lar, self.training)
+
+            wt_post = self.z_w_post(concat(z_post_fwd, z_post_sample))
+            wt_post = cumsoftmax(wt_post)
+            wt_post = torch.log(wt_post) / self.temperature
+            wt_post = torch.exp(wt_post)
+            wt_post = wt_post / wt_post.sum(dim=1).view(-1, 1)
 
             for fwd_t in range(self.block_size):
                 # prior over ct of each block, ct_i~p(ct_i|zt-1_i)
@@ -124,8 +140,6 @@ class FullQDisentangledVAE(nn.Module):
             wt = torch.log(wt) / self.temperature
             wt = torch.exp(wt)
             wt = wt / wt.sum(dim=1).view(-1,1)
-            wt = wt.reshape(batch_size, self.block_size, each_block_size)
-            wt = wt.sum(dim=2)
 
             z_prior_fwd = self.z_prior_out_list(z_fwd_all)
             z_fwd_latent_mean = z_prior_fwd[:, :self.z_dim]
@@ -234,12 +248,16 @@ class Trainer(object):
             each_block_size = self.model.z_dim // self.model.block_size
             zt_dec = []
             len = sample.shape[0]
+            wt_post = torch.ones(len, self.model.hidden_dim).to(self.device)
+            z_fwd_post = torch.zeros(len, self.model.hidden_dim).to(self.device)
+
             #len = self.samples
             x = self.model.enc_obs(sample.view(-1, *sample.size()[2:])).view(1, 8, -1)
             lstm_out, _ = self.model.z_lstm(x)
             #lstm_out, _ = self.model.z_rnn(lstm_out)
 
-            zt_1_post = self.model.z_post_out(lstm_out[:, 0])
+            z_post_fwd = self.model.z_rnn(lstm_out[:, 0], z_fwd_post, wt_post)
+            zt_1_post = self.model.z_post_out(z_post_fwd)
             zt_1_mean = zt_1_post[:, :self.model.z_dim]
             zt_1_lar = zt_1_post[:, self.model.z_dim:]
 
