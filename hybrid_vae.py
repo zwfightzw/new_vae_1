@@ -46,11 +46,11 @@ class FullQDisentangledVAE(nn.Module):
 
         self.z_lstm = nn.LSTM(self.conv_dim, self.hidden_dim, 1,
                               bidirectional=True, batch_first=True)
-        self.z_rnn = nn.RNN(self.hidden_dim * 2, self.hidden_dim, batch_first=True)
-        self.z_post_out = nn.Linear(self.hidden_dim, self.z_dim * 2)
+        #self.z_rnn = nn.RNN(self.hidden_dim * 2, self.hidden_dim, batch_first=True)
+        self.z_post_out = nn.Linear(self.hidden_dim*2, self.z_dim * 2)
 
         #self.z_prior_out_list = [nn.Linear(self.hidden_dim//self.block_size, self.z_dim * 2//self.block_size).to(device) for i in range(self.block_size)]
-        self.z_prior_out_list =  nn.Sequential(nn.Linear(self.hidden_dim, self.hidden_dim//2), nn.ReLU(), nn.Linear(self.hidden_dim//2, self.z_dim * 2).to(device))
+        self.z_prior_out_list = nn.Linear(self.hidden_dim, self.z_dim * 2).to(device)
 
         self.z_to_c_fwd_list = [GRUCell(input_size=self.z_dim, hidden_size=self.hidden_dim//self.block_size).to(self.device)
             for i in range(self.block_size)]
@@ -72,7 +72,7 @@ class FullQDisentangledVAE(nn.Module):
 
     def encode_z(self, x):
         lstm_out, _ = self.z_lstm(x)
-        lstm_out, _ = self.z_rnn(lstm_out)
+        #lstm_out, _ = self.z_rnn(lstm_out)
 
         batch_size = lstm_out.shape[0]
         seq_size = lstm_out.shape[1]
@@ -237,7 +237,7 @@ class Trainer(object):
             #len = self.samples
             x = self.model.enc_obs(sample.view(-1, *sample.size()[2:])).view(1, 8, -1)
             lstm_out, _ = self.model.z_lstm(x)
-            lstm_out, _ = self.model.z_rnn(lstm_out)
+            #lstm_out, _ = self.model.z_rnn(lstm_out)
 
             zt_1_post = self.model.z_post_out(lstm_out[:, 0])
             zt_1_mean = zt_1_post[:, :self.model.z_dim]
