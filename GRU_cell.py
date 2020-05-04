@@ -1,3 +1,4 @@
+import torch
 import torch.nn as nn
 import math
 import torch.nn.functional as F
@@ -43,3 +44,102 @@ class GRUCell(nn.Module):
         hy = newgate + inputgate * (hidden - newgate)
 
         return hy
+
+def cumsoftmax(x, dim=-1):
+    return torch.cumsum(F.softmax(x, dim=dim), dim=dim)
+
+
+class LinearDropConnect(nn.Linear):
+    def __init__(self, in_features, out_features, bias=True, dropout=0.):
+        super(LinearDropConnect, self).__init__(
+            in_features=in_features,
+            out_features=out_features,
+            bias=bias
+        )
+        self.dropout = dropout
+
+    def sample_mask(self):
+        if self.dropout == 0.:
+            self._weight = self.weight
+        else:
+            mask = self.weight.new_empty(
+                self.weight.size(),
+                dtype=torch.uint8
+            )
+            mask.bernoulli_(self.dropout)
+            self._weight = self.weight.masked_fill(mask, 0.)
+
+    def forward(self, input, sample_mask=False):
+        if self.training:
+            if sample_mask:
+                self.sample_mask()
+            return F.linear(input, self._weight, self.bias)
+        else:
+            return F.linear(input, self.weight * (1 - self.dropout),
+                            self.bias)
+
+
+
+class ONLSTMCell(nn.Module):
+
+    def __init__(self, input_size, hidden_size, chunk_size, dropconnect=0.):
+        super(ONLSTMCell, self).__init__()
+        self.input_size = input_size
+        self.hidden_size = hidden_size
+        self.chunk_size = chunk_size
+        self.n_chunk = int(hidden_size / chunk_size)
+
+        self.ih = nn.Sequential(
+            nn.Linear(input_size, 4 * hidden_size + self.n_chunk * 2, bias=True),
+            # LayerNorm(3 * hidden_size)
+        )
+        self.hh = LinearDropConnect(hidden_size, hidden_size*4+self.n_chunk*2, bias=True, dropout=dropconnect)
+
+        # self.c_norm = LayerNorm(hidden_size)
+
+        self.drop_weight_modules = [self.hh]
+
+    def forward(self, input, hidden,
+                transformed_input=None):
+        hx, cx = hidden
+
+        if transformed_input is None:
+            transformed_input = self.ih(input)
+
+        gates = transformed_input + self.hh(hx)
+        cingate, cforgetgate = gates[:, :self.n_chunk*2].chunk(2, 1)
+        outgate, cell, ingate, forgetgate = gates[:,self.n_chunk*2:].view(-1, self.n_chunk*4, self.chunk_size).chunk(4,1)
+
+        cingate = 1. - cumsoftmax(cingate)
+        cforgetgate = cumsoftmax(cforgetgate)
+
+        distance_cforget = 1. - cforgetgate.sum(dim=-1) / self.n_chunk
+        distance_cin = cingate.sum(dim=-1) / self.n_chunk
+
+        cingate = cingate[:, :, None]
+        cforgetgate = cforgetgate[:, :, None]
+
+        ingate = F.sigmoid(ingate)
+        forgetgate = F.sigmoid(forgetgate)
+        cell = F.tanh(cell)
+        outgate = F.sigmoid(outgate)
+
+        # cy = cforgetgate * forgetgate * cx + cingate * ingate * cell
+
+        overlap = cforgetgate * cingate
+        forgetgate = forgetgate * overlap + (cforgetgate - overlap)
+        ingate = ingate * overlap + (cingate - overlap)
+        cy = forgetgate * cx + ingate * cell
+
+        # hy = outgate * F.tanh(self.c_norm(cy))
+        hy = outgate * F.tanh(cy)
+        return hy.view(-1, self.hidden_size), cy, (distance_cforget, distance_cin)
+
+    def init_hidden(self, bsz):
+        weight = next(self.parameters()).data
+        return (weight.new(bsz, self.hidden_size).zero_(),
+                weight.new(bsz, self.n_chunk, self.chunk_size).zero_())
+
+    def sample_masks(self):
+        for m in self.drop_weight_modules:
+            m.sample_mask()

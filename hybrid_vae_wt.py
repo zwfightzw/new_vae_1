@@ -3,7 +3,7 @@ import torchvision
 import torch.utils.data
 import torch.nn.init
 import torch.optim as optim
-from GRU_cell import GRUCell
+from GRU_cell import GRUCell, ONLSTMCell
 from modules import *
 import numpy as np
 import datetime
@@ -36,30 +36,25 @@ class Sprites(torch.utils.data.Dataset):
 
 
 class FullQDisentangledVAE(nn.Module):
-    def __init__(self, frames, z_dim, conv_dim, hidden_dim, channel, dataset, device):
+    def __init__(self, block_size, frames, z_dim, conv_dim, hidden_dim, channel, dataset, device):
         super(FullQDisentangledVAE, self).__init__()
         self.z_dim = z_dim
         self.frames = frames
         self.conv_dim = conv_dim
         self.hidden_dim = hidden_dim
-        self.block_size = 3
+        self.block_size = block_size
         self.device = device
         self.dataset = dataset
 
-        self.z_lstm = nn.LSTM(self.conv_dim, self.hidden_dim, 1,
+        self.z_lstm = nn.LSTM(self.conv_dim, self.hidden_dim//2, 1,
                               bidirectional=True, batch_first=True)
-        self.z_rnn = nn.RNN(self.hidden_dim * 2, self.hidden_dim, batch_first=True)
+        #self.z_rnn = nn.RNN(self.hidden_dim *2, self.hidden_dim, batch_first=True)
         self.z_post_out = nn.Linear(self.hidden_dim, self.z_dim * 2)
 
-        # self.z_prior_out_list = [nn.Linear(self.hidden_dim//self.block_size, self.z_dim * 2//self.block_size).to(device) for i in range(self.block_size)]
-        self.z_prior_out_list = nn.Sequential(nn.Linear(self.hidden_dim, self.hidden_dim // 2), nn.ReLU(),
-                                              nn.Linear(self.hidden_dim // 2, self.z_dim * 2).to(device))
+        self.z_prior_out = nn.Linear(self.hidden_dim, self.z_dim * 2).to(device)
 
-        self.z_to_c_fwd_list = [GRUCell(input_size=self.z_dim, hidden_size=self.hidden_dim//self.block_size).to(self.device)
-                                for i in range(self.block_size)]
+        self.z_to_c_fwd_list = ONLSTMCell(input_size=self.z_dim, hidden_size=self.hidden_dim, chunk_size=self.block_size).to(self.device)
 
-        self.z_w_function = nn.Linear(self.hidden_dim,
-                                      self.hidden_dim)  # nn.Sequential(nn.Linear(self.hidden_dim, self.hidden_dim//2),nn.ReLU(), nn.Linear(self.hidden_dim//2, self.block_size))
         # observation encoder / decoder
         self.enc_obs = Encoder(feat_size=self.hidden_dim, output_size=self.conv_dim, channel=channel)
         self.dec_obs = Decoder(input_size=self.z_dim, feat_size=self.hidden_dim, channel=channel, dataset=dataset)
@@ -76,7 +71,7 @@ class FullQDisentangledVAE(nn.Module):
 
     def encode_z(self, x):
         lstm_out, _ = self.z_lstm(x)
-        lstm_out, _ = self.z_rnn(lstm_out)
+        #lstm_out, _ = self.z_rnn(lstm_out)
 
         batch_size = lstm_out.shape[0]
         seq_size = lstm_out.shape[1]
@@ -92,12 +87,12 @@ class FullQDisentangledVAE(nn.Module):
         zt_1_lar = zt_1_post[:, self.z_dim:]
 
         post_z_1 = self.reparameterize(zt_1_mean, zt_1_lar, self.training)
-        z_fwd = post_z_1.new_zeros(batch_size, self.hidden_dim)
         zt_obs_list.append(post_z_1)
+        if self.training:
+            self.z_to_c_fwd_list.sample_masks()
 
-        # init wt
-        wt = torch.ones(batch_size, self.hidden_dim).to(self.device)
-        z_fwd_list = [torch.zeros(batch_size, self.hidden_dim//self.block_size).to(self.device) for i in range(self.block_size)]
+        z_hidden, z_cy = self.z_to_c_fwd_list.init_hidden(batch_size)
+
         for t in range(1, seq_size):
 
             z_post_out = self.z_post_out(lstm_out[:, t])
@@ -108,43 +103,14 @@ class FullQDisentangledVAE(nn.Module):
             z_post_lar_list.append(zt_post_lar)
             z_post_sample = self.reparameterize(zt_post_mean, zt_post_lar, self.training)
 
-            for fwd_t in range(self.block_size):
-                # prior over ct of each block, ct_i~p(ct_i|zt-1_i)
-                '''
-                if fwd_t==0:
-                    zt_1_tmp = concat(post_z_1[:, fwd_t * each_block_size:(fwd_t + 2) * each_block_size], torch.zeros(batch_size, self.z_dim//self.block_size).to(self.device))
-                if fwd_t==1:
-                    zt_1_tmp = post_z_1
-                if fwd_t==2:
-                    zt_1_tmp = concat(torch.zeros(batch_size, self.z_dim//self.block_size).to(self.device),post_z_1[:, (fwd_t-1) * each_block_size:(fwd_t + 1) * each_block_size])
-                '''
-                z_fwd_list[fwd_t] = self.z_to_c_fwd_list[fwd_t](post_z_1, z_fwd_list[fwd_t],
-                                                                w=wt[:, fwd_t * self.hidden_dim//self.block_size:(fwd_t + 1) * self.hidden_dim//self.block_size])
+            z_hidden, z_cy, _ = self.z_to_c_fwd_list(post_z_1, (z_hidden, z_cy))
 
-            z_fwd_all = torch.stack(z_fwd_list, dim=2).view(batch_size, self.hidden_dim)
-            # p(xt|zt)
             zt_obs_list.append(z_post_sample)
-            # update weight, w0<...<wd<=1, d means block_size
-            wt = self.z_w_function(z_fwd_all)
-            wt = cumsoftmax(wt)
 
-            z_prior_fwd = self.z_prior_out_list(z_fwd_all)
+            z_prior_fwd = self.z_prior_out(z_hidden)
             z_fwd_latent_mean = z_prior_fwd[:, :self.z_dim]
             z_fwd_latent_lar = z_prior_fwd[:, self.z_dim:]
 
-            '''
-            for i in range(self.block_size):
-                z_prior_fwd = self.z_prior_out_list[i](z_fwd_list[i])
-                if i == 0:
-                    z_fwd_latent_mean = z_prior_fwd[:, :self.z_dim // self.block_size]
-                    z_fwd_latent_lar = z_prior_fwd[:, self.z_dim // self.block_size:]
-                else:
-                    z_fwd_latent_mean = concat(
-                        z_fwd_latent_mean, z_prior_fwd[:, :self.z_dim // self.block_size])
-                    z_fwd_latent_lar = concat(
-                        z_fwd_latent_lar, z_prior_fwd[:, self.z_dim // self.block_size:])
-
-            '''
             # store the prior of ct_i
             z_prior_mean_list.append(z_fwd_latent_mean)
             z_prior_lar_list.append(z_fwd_latent_lar)
@@ -240,58 +206,23 @@ class Trainer(object):
             # len = self.samples
             x = self.model.enc_obs(sample.view(-1, *sample.size()[2:])).view(1, 8, -1)
             lstm_out, _ = self.model.z_lstm(x)
-            lstm_out, _ = self.model.z_rnn(lstm_out)
 
             zt_1_post = self.model.z_post_out(lstm_out[:, 0])
             zt_1_mean = zt_1_post[:, :self.model.z_dim]
             zt_1_lar = zt_1_post[:, self.model.z_dim:]
 
             zt_1 = self.model.reparameterize(zt_1_mean, zt_1_lar, self.model.training)
-            # zt_1 = [Normal(torch.zeros(self.model.z_dim).to(self.device), torch.ones(self.model.z_dim).to(self.device)).rsample() for i in range(len)]
-            # zt_1 = torch.stack(zt_1, dim=0)
             zt_dec.append(zt_1)
 
-            # init wt
-            wt = torch.ones(len, self.model.hidden_dim).to(self.device)
-            z_fwd_list = [torch.zeros(len, self.model.hidden_dim//self.model.block_size).to(self.device) for i in range(self.model.block_size)]
+            z_hidden, z_cy = self.model.z_to_c_fwd_list.init_hidden(len)
+
             for t in range(1, self.model.frames):
-                for fwd_t in range(self.model.block_size):
-                    # prior over ct of each block, ct_i~p(ct_i|zt-1_i)
-                    '''
-                    if fwd_t == 0:
-                        zt_1_tmp = concat(zt_1[:, fwd_t * each_block_size:(fwd_t + 2) * each_block_size],
-                                          torch.zeros(len, self.model.z_dim // self.model.block_size).to(self.device))
-                    if fwd_t == 1:
-                        zt_1_tmp = zt_1
-                    if fwd_t == 2:
-                        zt_1_tmp = concat(torch.zeros(len, self.model.z_dim//self.model.block_size).to(self.device),
-                                          zt_1[:, (fwd_t - 1) * each_block_size:(fwd_t + 1) * each_block_size])
 
-                    '''
-
-                    z_fwd_list[fwd_t] = self.model.z_to_c_fwd_list[fwd_t](zt_1, z_fwd_list[fwd_t],
-                                                                          w=wt[:, fwd_t * self.model.hidden_dim//self.model.block_size:(fwd_t + 1) * self.model.hidden_dim//self.model.block_size])
-
-                z_fwd_all = torch.stack(z_fwd_list, dim=2).view(len, self.model.hidden_dim)
-                # update weight, w0<...<wd<=1, d means block_size
-                wt = self.model.z_w_function(z_fwd_all)
-                wt = cumsoftmax(wt)
-
-                z_prior_fwd = self.model.z_prior_out_list(z_fwd_all)
+                z_hidden, z_cy, _ = self.model.z_to_c_fwd_list(zt_1, (z_hidden, z_cy))
+                z_prior_fwd = self.model.z_prior_out(z_hidden)
                 z_fwd_latent_mean = z_prior_fwd[:, :self.model.z_dim]
                 z_fwd_latent_lar = z_prior_fwd[:, self.model.z_dim:]
 
-                '''
-                for i in range(self.model.block_size):
-                    z_prior_fwd = self.model.z_prior_out_list[i](z_fwd_list[i])
-                    if i == 0:
-                        z_fwd_latent_mean = z_prior_fwd[:, :self.model.z_dim//self.model.block_size]
-                        z_fwd_latent_lar = z_prior_fwd[:, self.model.z_dim//self.model.block_size:]
-                    else:
-                        z_fwd_latent_mean = concat(z_fwd_latent_mean, z_prior_fwd[:, :self.model.z_dim//self.model.block_size])
-                        z_fwd_latent_lar = concat(z_fwd_latent_lar, z_prior_fwd[:, self.model.z_dim//self.model.block_size:])
-
-                '''
                 # store the prior of ct_i
                 zt = self.model.reparameterize(z_fwd_latent_mean, z_fwd_latent_lar, self.model.training)
                 zt_dec.append(zt)
@@ -313,10 +244,11 @@ class Trainer(object):
             torchvision.utils.save_image(image, '%s/epoch%d.png' % (self.recon_path, epoch))
 
     def train_model(self):
-        self.model.train()
+        self.model.eval()
         sample = iter(self.test).next().to(self.device)
         self.sample_frames(0 + 1, sample)
         self.recon_frame(0 + 1, sample)
+        self.model.train()
         for epoch in range(self.start_epoch, self.epochs):
             losses = []
             kl_loss = []
@@ -360,6 +292,7 @@ if __name__ == '__main__':
     parser.add_argument('--z-dim', type=int, default=144)  # 72 144
     parser.add_argument('--hidden-dim', type=int, default=252)  # 216 252
     parser.add_argument('--conv-dim', type=int, default=256)  # 256 512
+    parser.add_argument('--block_size', type=int, default=6)  # 6  12
     # data size
     parser.add_argument('--batch-size', type=int, default=32)
     parser.add_argument('--frame-size', type=int, default=8)
@@ -388,7 +321,7 @@ if __name__ == '__main__':
         train_loader, test_loader = data.get_data_loader(FLAGS, True)
         channel = 1
 
-    vae = FullQDisentangledVAE(frames=FLAGS.frame_size, z_dim=FLAGS.z_dim, hidden_dim=FLAGS.hidden_dim,
+    vae = FullQDisentangledVAE(block_size=FLAGS.block_size, frames=FLAGS.frame_size, z_dim=FLAGS.z_dim, hidden_dim=FLAGS.hidden_dim,
                                conv_dim=FLAGS.conv_dim, channel=channel, dataset=FLAGS.dset_name, device=device)
 
     starttime = datetime.datetime.now()
