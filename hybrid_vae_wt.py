@@ -292,7 +292,7 @@ if __name__ == '__main__':
     parser.add_argument('--z-dim', type=int, default=144)  # 72 144
     parser.add_argument('--hidden-dim', type=int, default=252)  # 216 252
     parser.add_argument('--conv-dim', type=int, default=256)  # 256 512
-    parser.add_argument('--block_size', type=int, default=6)  # 6  12
+    parser.add_argument('--block_size', type=int, default=3)  # 3 4
     # data size
     parser.add_argument('--batch-size', type=int, default=32)
     parser.add_argument('--frame-size', type=int, default=8)
