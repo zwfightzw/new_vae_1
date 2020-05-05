@@ -84,9 +84,12 @@ class FullQDisentangledVAE(nn.Module):
         post_z_1 = self.reparameterize(zt_1_mean, zt_1_lar, self.training)
 
         # zt_1 = torch.zeros(batch_size, self.z_dim).to(device)
-        z_fwd = post_z_1.new_zeros(batch_size, self.hidden_dim)
-        z_c = post_z_1.new_zeros(batch_size, self.hidden_dim)
         zt_obs_list.append(post_z_1)
+
+        if self.training:
+            self.z_to_z_fwd.sample_masks()
+
+        z_fwd, z_c = self.z_to_z_fwd.init_hidden(batch_size)
 
         for t in range(1, seq_size):
             # posterior over ct, q(ct|ot,ft)
@@ -163,7 +166,7 @@ class Trainer(object):
         self.model.to(device)
         self.learning_rate = learning_rate
         self.checkpoints = checkpoints
-        self.optimizer = optim.Adam(self.model.parameters(), self.learning_rate)
+        self.optimizer = optim.Adam(self.model.parameters(), self.learning_rate, weight_decay=1e-5)
         self.samples = nsamples
         self.sample_path = sample_path
         self.recon_path = recon_path
@@ -211,9 +214,8 @@ class Trainer(object):
 
             # zt_1 = [Normal(torch.zeros(self.model.z_dim).to(self.device), torch.ones(self.model.z_dim).to(self.device)).rsample() for i in range(len)]
             # zt_1 = torch.stack(zt_1, dim=0)
+            z_fwd, z_c = self.model.z_to_z_fwd.init_hidden(len)
 
-            z_fwd = zt_1.new_zeros(len, self.model.hidden_dim)
-            z_c = zt_1.new_zeros(len, self.model.hidden_dim)
             zt_dec.append(zt_1)
 
             for t in range(1, 8):

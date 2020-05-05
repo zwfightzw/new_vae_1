@@ -87,13 +87,23 @@ class LSTMCell(nn.Module):
 
     """
 
-    def __init__(self, input_size, hidden_size, bias=True):
+    def __init__(self, input_size, hidden_size, bias=True, dropconnect=0.):
         super(LSTMCell, self).__init__()
         self.input_size = input_size
         self.hidden_size = hidden_size
         self.bias = bias
         self.x2h = nn.Linear(input_size, 4 * hidden_size, bias=bias)
         self.h2h = nn.Linear(hidden_size, 4 * hidden_size, bias=bias)
+
+        self.ih = nn.Sequential(
+            nn.Linear(input_size, 4 * hidden_size, bias=True),
+            # LayerNorm(3 * hidden_size)
+        )
+        self.hh = LinearDropConnect(hidden_size, hidden_size*4, bias=True, dropout=dropconnect)
+
+        # self.c_norm = LayerNorm(hidden_size)
+
+        self.drop_weight_modules = [self.hh]
         self.reset_parameters()
 
     def reset_parameters(self):
@@ -103,11 +113,8 @@ class LSTMCell(nn.Module):
 
     def forward(self, x, hidden):
         hx, cx = hidden
-
         x = x.view(-1, x.size(1))
-
         gates = self.x2h(x) + self.h2h(hx)
-
         #gates = gates.squeeze()
 
         ingate, forgetgate, cellgate, outgate = gates.chunk(4, 1)
@@ -122,6 +129,16 @@ class LSTMCell(nn.Module):
         hy = torch.mul(outgate, F.tanh(cy))
 
         return (hy, cy)
+
+    def init_hidden(self, bsz):
+        weight = next(self.parameters()).data
+        return (weight.new(bsz, self.hidden_size).zero_(),
+                weight.new(bsz, self.hidden_size).zero_())
+
+    def sample_masks(self):
+        for m in self.drop_weight_modules:
+            m.sample_mask()
+
 
 class ONLSTMCell(nn.Module):
 
@@ -141,6 +158,12 @@ class ONLSTMCell(nn.Module):
         # self.c_norm = LayerNorm(hidden_size)
 
         self.drop_weight_modules = [self.hh]
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        std = 1.0 / math.sqrt(self.hidden_size)
+        for w in self.parameters():
+            w.data.uniform_(-std, std)
 
     def forward(self, input, hidden,
                 transformed_input=None):

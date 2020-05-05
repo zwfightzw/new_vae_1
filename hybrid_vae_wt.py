@@ -169,7 +169,7 @@ class Trainer(object):
         self.model.to(device)
         self.learning_rate = learning_rate
         self.checkpoints = checkpoints
-        self.optimizer = optim.Adam(self.model.parameters(), self.learning_rate)
+        self.optimizer = optim.Adam(self.model.parameters(), self.learning_rate, weight_decay=1e-5)
         self.samples = nsamples
         self.sample_path = sample_path
         self.recon_path = recon_path
@@ -294,7 +294,7 @@ if __name__ == '__main__':
     parser.add_argument('--conv-dim', type=int, default=256)  # 256 512
     parser.add_argument('--block_size', type=int, default=3)  # 3 4
     # data size
-    parser.add_argument('--batch-size', type=int, default=32)
+    parser.add_argument('--batch-size', type=int, default=6)
     parser.add_argument('--frame-size', type=int, default=8)
     parser.add_argument('--nsamples', type=int, default=2)
 
