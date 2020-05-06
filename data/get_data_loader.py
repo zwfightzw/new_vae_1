@@ -13,10 +13,8 @@ def get_data_loader(opt, train):
     dset = MovingMNIST(opt.dset_path, opt.frame_size, [2], transform)
 
   elif opt.dset_name == 'bouncing_balls':
-    transform = transforms.Compose([vtransforms.Scale(opt.image_size),
-                                    vtransforms.ToTensor()])
-    dset = BouncingBalls(opt.dset_path, opt.is_train, opt.n_frames_input,
-                         opt.n_frames_output, opt.image_size[0], transform)
+    transform = transforms.Compose([vtransforms.ToTensor()])
+    dset = BouncingBalls(opt.dset_path, opt.frame_size, transform)
 
   else:
     raise NotImplementedError

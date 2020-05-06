@@ -131,7 +131,7 @@ def loss_fn(dataset, original_seq, recon_seq, zt_1_mean, zt_1_lar,z_post_mean, z
 
     if dataset == 'lpc':
         obs_cost = F.mse_loss(recon_seq,original_seq, size_average=False)
-    elif dataset == 'moving_mnist':
+    elif dataset == 'moving_mnist' or dataset=='bouncing_balls':
         obs_cost = F.binary_cross_entropy(recon_seq, original_seq, size_average=False)  #binary_cross_entropy
     batch_size = recon_seq.shape[0]
 
@@ -232,7 +232,6 @@ class Trainer(object):
         with torch.no_grad():
             _, _, _, _, _, _,_, recon = self.model(original)
             image = torch.cat((original, recon), dim=0)
-            print(image.shape)
             image = image.view(16, self.channel, 64, 64)
             torchvision.utils.save_image(image, '%s/epoch%d.png' % (self.recon_path, epoch))
 
@@ -280,7 +279,7 @@ if __name__ == '__main__':
     # method
     parser.add_argument('--method', type=str, default='Vanilla')
     # dataset
-    parser.add_argument('--dset_name', type=str, default='moving_mnist')  #moving_mnist, lpc
+    parser.add_argument('--dset_name', type=str, default='bouncing_balls')  #moving_mnist, lpc, bouncing_balls
     # state size
     parser.add_argument('--z-dim', type=int, default=144)  # 72 144
     parser.add_argument('--hidden-dim', type=int, default=252) #  216 252
@@ -312,6 +311,11 @@ if __name__ == '__main__':
         FLAGS.dset_path = os.path.join('./datasets', FLAGS.dset_name)
         train_loader, test_loader = data.get_data_loader(FLAGS, True)
         channel = 1
+    elif FLAGS.dset_name == 'bouncing_balls':
+        FLAGS.dset_path = os.path.join('./datasets', FLAGS.dset_name)
+        train_loader, test_loader = data.get_data_loader(FLAGS, True)
+        channel = 3
+
 
     vae = FullQDisentangledVAE(frames=FLAGS.frame_size, z_dim=FLAGS.z_dim, hidden_dim=FLAGS.hidden_dim, conv_dim=FLAGS.conv_dim, channel=channel, dataset=FLAGS.dset_name, device=device)
     # set writer

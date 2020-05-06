@@ -173,10 +173,12 @@ class Decoder(nn.Module):
             self.linear = LinearLayer(input_size=input_size,
                                       output_size=feat_size,
                                       nonlinear=nn.Identity())
-        if dataset == 'moving_mnist':
+        if dataset == 'moving_mnist' or dataset == 'bouncing_balls':
             nolinear_dataset = nn.Sigmoid()
         elif dataset == 'lpc':
             nolinear_dataset = nn.Tanh()
+        elif dataset == 'bouncing_balls':
+            nolinear_dataset = nn.Sigmoid()
         self.network = nn.Sequential(ConvTransLayer2D(input_size=feat_size,
                                                       output_size=feat_size,
                                                       kernel_size=4,
