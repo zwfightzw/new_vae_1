@@ -252,7 +252,7 @@ class Trainer(object):
             losses = []
             kl_loss = []
             write_log("Running Epoch : {}".format(epoch + 1), self.log_path)
-            for i, data in enumerate(self.train, 1):
+            for i, data in enumerate(self.train):
                 data = data.to(self.device)
                 self.optimizer.zero_grad()
                 zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, z, recon_x = self.model(
