@@ -302,7 +302,7 @@ if __name__ == '__main__':
     # optimization
     parser.add_argument('--learn-rate', type=float, default=0.0002)
     parser.add_argument('--grad-clip', type=float, default=0.0)
-    parser.add_argument('--max-epochs', type=int, default=300)
+    parser.add_argument('--max-epochs', type=int, default=200)
     parser.add_argument('--gpu_id', type=int, default=1)
 
     FLAGS = parser.parse_args()
