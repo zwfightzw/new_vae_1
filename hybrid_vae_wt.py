@@ -46,14 +46,14 @@ class FullQDisentangledVAE(nn.Module):
         self.device = device
         self.dataset = dataset
 
-        self.z_lstm = nn.LSTM(self.conv_dim, self.hidden_dim//2, 1,
-                              bidirectional=True, batch_first=True)
+        #self.z_lstm = nn.LSTM(self.conv_dim, self.hidden_dim//2, 1, bidirectional=True, batch_first=True)
+        self.z_lstm = nn.LSTM(self.conv_dim, self.hidden_dim, 1, batch_first=True)
         #self.z_rnn = nn.RNN(self.hidden_dim *2, self.hidden_dim, batch_first=True)
         self.z_post_out = nn.Linear(self.hidden_dim, self.z_dim * 2)
 
-        self.z_prior_out = nn.Linear(self.hidden_dim, self.z_dim * 2).to(device)
+        self.z_prior_out = nn.Linear(self.hidden_dim, self.z_dim * 2)
 
-        self.z_to_c_fwd_list = ONLSTMCell(input_size=self.z_dim, hidden_size=self.hidden_dim, chunk_size=self.block_size).to(self.device)
+        self.z_to_c_fwd_list = ONLSTMCell(input_size=self.z_dim, hidden_size=self.hidden_dim, chunk_size=self.block_size, dropconnect= 0.3).to(self.device)
 
         # observation encoder / decoder
         self.enc_obs = Encoder(feat_size=self.hidden_dim, output_size=self.conv_dim, channel=channel)
@@ -294,7 +294,7 @@ if __name__ == '__main__':
     parser.add_argument('--conv-dim', type=int, default=256)  # 256 512
     parser.add_argument('--block_size', type=int, default=3)  # 3 4
     # data size
-    parser.add_argument('--batch-size', type=int, default=6)
+    parser.add_argument('--batch-size', type=int, default=64)
     parser.add_argument('--frame-size', type=int, default=8)
     parser.add_argument('--nsamples', type=int, default=2)
 

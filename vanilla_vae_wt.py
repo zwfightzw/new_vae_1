@@ -41,8 +41,8 @@ class FullQDisentangledVAE(nn.Module):
         self.device = device
         self.dataset = dataset
 
-        self.z_lstm = nn.LSTM(self.conv_dim, self.hidden_dim // 2, 1,
-                              bidirectional=True, batch_first=True)
+        #self.z_lstm = nn.LSTM(self.conv_dim, self.hidden_dim // 2, 1, bidirectional=True, batch_first=True)
+        self.z_lstm = nn.LSTM(self.conv_dim, self.hidden_dim, 1, batch_first=True)
         # self.z_rnn = nn.RNN(self.hidden_dim *2, self.hidden_dim, batch_first=True)
         self.z_post_out = nn.Linear(self.hidden_dim, self.z_dim * 2)
 
@@ -295,7 +295,7 @@ if __name__ == '__main__':
     parser.add_argument('--hidden-dim', type=int, default=252)  # 216 252
     parser.add_argument('--conv-dim', type=int, default=256)  # 256 512
     # data size
-    parser.add_argument('--batch-size', type=int, default=32)
+    parser.add_argument('--batch-size', type=int, default=64)
     parser.add_argument('--frame-size', type=int, default=8)
     parser.add_argument('--nsamples', type=int, default=2)
 
