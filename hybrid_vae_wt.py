@@ -287,12 +287,12 @@ if __name__ == '__main__':
     # method
     parser.add_argument('--method', type=str, default='Hybrid_wt')
     # dataset
-    parser.add_argument('--dset_name', type=str, default='bouncing_balls')  # moving_mnist, lpc, bouncing_balls
+    parser.add_argument('--dset_name', type=str, default='moving_mnist')  # moving_mnist, lpc, bouncing_balls
     # state size
     parser.add_argument('--z-dim', type=int, default=144)  # 72 144
     parser.add_argument('--hidden-dim', type=int, default=252)  # 216 252
     parser.add_argument('--conv-dim', type=int, default=256)  # 256 512
-    parser.add_argument('--block_size', type=int, default=3)  # 3 4
+    parser.add_argument('--block_size', type=int, default=3)  # 3 (84), 4(63),  6 (42), 12(21)
     # data size
     parser.add_argument('--batch-size', type=int, default=64)
     parser.add_argument('--frame-size', type=int, default=8)

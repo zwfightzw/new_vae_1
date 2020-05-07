@@ -289,7 +289,7 @@ if __name__ == '__main__':
     # method
     parser.add_argument('--method', type=str, default='Vanilla_wt')
     # dataset
-    parser.add_argument('--dset_name', type=str, default='bouncing_balls')  # moving_mnist, lpc, bouncing_balls
+    parser.add_argument('--dset_name', type=str, default='moving_mnist')  # moving_mnist, lpc, bouncing_balls
     # state size
     parser.add_argument('--z-dim', type=int, default=144)  # 72 144
     parser.add_argument('--hidden-dim', type=int, default=252)  # 216 252
