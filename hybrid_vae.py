@@ -44,8 +44,8 @@ class FullQDisentangledVAE(nn.Module):
         self.dataset = dataset
         self.temperature = temperature
 
-        self.z_lstm = nn.LSTM(self.conv_dim, self.hidden_dim//2, 1,
-                              bidirectional=True, batch_first=True)
+        #self.z_lstm = nn.LSTM(self.conv_dim, self.hidden_dim//2, 1, bidirectional=True, batch_first=True)
+        self.z_lstm = nn.LSTM(self.conv_dim, self.hidden_dim, 1, batch_first=True)
         #self.z_rnn = nn.RNN(self.hidden_dim * 2, self.hidden_dim, batch_first=True)
         self.z_post_out = nn.Linear(self.hidden_dim, self.z_dim * 2)
 
@@ -205,7 +205,7 @@ class Trainer(object):
         self.model.to(device)
         self.learning_rate = learning_rate
         self.checkpoints = checkpoints
-        self.optimizer = optim.Adam(self.model.parameters(), self.learning_rate)
+        self.optimizer = optim.Adam(self.model.parameters(), self.learning_rate, weight_decay=1e-5)
         self.samples = nsamples
         self.sample_path = sample_path
         self.recon_path = recon_path
@@ -369,12 +369,12 @@ if __name__ == '__main__':
     parser.add_argument('--conv-dim', type=int, default=256)  # 256 512
     parser.add_argument('--block_size', type=int, default=3) # 3  4
     # data size
-    parser.add_argument('--batch-size', type=int, default=32)
+    parser.add_argument('--batch-size', type=int, default=64)
     parser.add_argument('--frame-size', type=int, default=8)
     parser.add_argument('--nsamples', type=int, default=2)
 
     # optimization
-    parser.add_argument('--learn-rate', type=float, default=0.0001)
+    parser.add_argument('--learn-rate', type=float, default=0.0002)
     parser.add_argument('--temperature', type=float, default=1.0)
     parser.add_argument('--grad-clip', type=float, default=0.0)
     parser.add_argument('--max-epochs', type=int, default=300)
