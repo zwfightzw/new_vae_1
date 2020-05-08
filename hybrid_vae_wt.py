@@ -11,7 +11,6 @@ import dateutil.tz
 import argparse
 import data
 
-
 def write_log(log, log_path):
     f = open(log_path, mode='a')
     f.write(str(log))
@@ -36,7 +35,7 @@ class Sprites(torch.utils.data.Dataset):
 
 
 class FullQDisentangledVAE(nn.Module):
-    def __init__(self, block_size, frames, z_dim, conv_dim, hidden_dim, channel, dataset, device):
+    def __init__(self, block_size, frames, z_dim, conv_dim, hidden_dim, channel, dropout, dataset, device):
         super(FullQDisentangledVAE, self).__init__()
         self.z_dim = z_dim
         self.frames = frames
@@ -52,11 +51,11 @@ class FullQDisentangledVAE(nn.Module):
 
         self.z_prior_out = nn.Linear(self.hidden_dim, self.z_dim * 2)
 
-        self.z_to_c_fwd_list = ONLSTMCell(input_size=self.z_dim, hidden_size=self.hidden_dim, chunk_size=self.block_size, dropconnect= 0.4).to(self.device)
+        self.z_to_c_fwd_list = ONLSTMCell(input_size=self.z_dim, hidden_size=self.hidden_dim, chunk_size=self.block_size, dropconnect= dropout).to(self.device)
 
         # observation encoder / decoder
         self.enc_obs = Encoder(feat_size=self.hidden_dim, output_size=self.conv_dim, channel=channel)
-        self.dec_obs = Decoder(input_size=self.z_dim, feat_size=self.hidden_dim, channel=channel, dataset=dataset)
+        self.dec_obs = Decoder(input_size=self.z_dim+ self.hidden_dim, feat_size=self.hidden_dim, channel=channel, dataset=dataset)
 
     def reparameterize(self, mean, logvar, random_sampling=True):
         # Reparametrization occurs only if random sampling is set to true, otherwise mean is returned
@@ -86,11 +85,11 @@ class FullQDisentangledVAE(nn.Module):
         zt_1_lar = zt_1_post[:, self.z_dim:]
 
         post_z_1 = self.reparameterize(zt_1_mean, zt_1_lar, self.training)
-        zt_obs_list.append(post_z_1)
         if self.training:
             self.z_to_c_fwd_list.sample_masks()
-
         z_hidden, z_cy = self.z_to_c_fwd_list.init_hidden(batch_size)
+        post_z_1_obs = concat(z_hidden, post_z_1)
+        zt_obs_list.append(post_z_1_obs)
 
         for t in range(1, seq_size):
 
@@ -104,7 +103,8 @@ class FullQDisentangledVAE(nn.Module):
 
             z_hidden, z_cy, _ = self.z_to_c_fwd_list(post_z_1, (z_hidden, z_cy))
 
-            zt_obs_list.append(z_post_sample)
+            zt_obs = concat(z_hidden, z_post_sample)
+            zt_obs_list.append(zt_obs)
 
             z_prior_fwd = self.z_prior_out(z_hidden)
             z_fwd_latent_mean = z_prior_fwd[:, :self.z_dim]
@@ -211,9 +211,10 @@ class Trainer(object):
             zt_1_lar = zt_1_post[:, self.model.z_dim:]
 
             zt_1 = self.model.reparameterize(zt_1_mean, zt_1_lar, self.model.training)
-            zt_dec.append(zt_1)
 
             z_hidden, z_cy = self.model.z_to_c_fwd_list.init_hidden(len)
+            zt_1_obs = concat(z_hidden, zt_1)
+            zt_dec.append(zt_1_obs)
 
             for t in range(1, self.model.frames):
 
@@ -224,7 +225,8 @@ class Trainer(object):
 
                 # store the prior of ct_i
                 zt = self.model.reparameterize(z_fwd_latent_mean, z_fwd_latent_lar, self.model.training)
-                zt_dec.append(zt)
+                zt_obs = concat(z_hidden, zt)
+                zt_dec.append(zt_obs)
 
                 # decode observation
                 zt_1 = zt
@@ -300,6 +302,7 @@ if __name__ == '__main__':
     # optimization
     parser.add_argument('--learn-rate', type=float, default=0.001)
     parser.add_argument('--grad-clip', type=float, default=0.0)
+    parser.add_argument('--dropout', type=float, default=0.3)
     parser.add_argument('--max-epochs', type=int, default=100)
     parser.add_argument('--gpu_id', type=int, default=1)
 
@@ -325,7 +328,7 @@ if __name__ == '__main__':
         channel = 3
 
     vae = FullQDisentangledVAE(block_size=FLAGS.block_size, frames=FLAGS.frame_size, z_dim=FLAGS.z_dim, hidden_dim=FLAGS.hidden_dim,
-                               conv_dim=FLAGS.conv_dim, channel=channel, dataset=FLAGS.dset_name, device=device)
+                               conv_dim=FLAGS.conv_dim, channel=channel, dropout=FLAGS.dropout, dataset=FLAGS.dset_name, device=device)
 
     starttime = datetime.datetime.now()
     now = datetime.datetime.now(dateutil.tz.tzlocal())
