@@ -94,16 +94,6 @@ class LSTMCell(nn.Module):
         self.bias = bias
         self.x2h = nn.Linear(input_size, 4 * hidden_size, bias=bias)
         self.h2h = nn.Linear(hidden_size, 4 * hidden_size, bias=bias)
-
-        self.ih = nn.Sequential(
-            nn.Linear(input_size, 4 * hidden_size, bias=True),
-            # LayerNorm(3 * hidden_size)
-        )
-        self.hh = LinearDropConnect(hidden_size, hidden_size*4, bias=True, dropout=dropconnect)
-
-        # self.c_norm = LayerNorm(hidden_size)
-
-        self.drop_weight_modules = [self.hh]
         self.reset_parameters()
 
     def reset_parameters(self):
@@ -134,10 +124,6 @@ class LSTMCell(nn.Module):
         weight = next(self.parameters()).data
         return (weight.new(bsz, self.hidden_size).zero_(),
                 weight.new(bsz, self.hidden_size).zero_())
-
-    def sample_masks(self):
-        for m in self.drop_weight_modules:
-            m.sample_mask()
 
 
 class ONLSTMCell(nn.Module):
@@ -190,12 +176,12 @@ class ONLSTMCell(nn.Module):
         cell = F.tanh(cell)
         outgate = F.sigmoid(outgate)
 
-        # cy = cforgetgate * forgetgate * cx + cingate * ingate * cell
+        cy = cforgetgate * forgetgate * cx + cingate * ingate * cell
 
         overlap = cforgetgate * cingate
         forgetgate = forgetgate * overlap + (cforgetgate - overlap)
         ingate = ingate * overlap + (cingate - overlap)
-        cy = forgetgate * cx + ingate * cell
+        #cy = forgetgate * cx + ingate * cell
 
         # hy = outgate * F.tanh(self.c_norm(cy))
         hy = outgate * F.tanh(cy)

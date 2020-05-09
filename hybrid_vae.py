@@ -121,8 +121,8 @@ class FullQDisentangledVAE(nn.Module):
             zt_obs_list.append(z_post_sample)
             # update weight, w0<...<wd<=1, d means block_size
             #wt = self.z_w_function(concat(z_fwd_all,z_post_sample))
-            #wt = self.z_w_function(z_fwd_all)
-            #wt = cumsoftmax(wt)
+            wt = self.z_w_function(z_fwd_all)
+            wt = cumsoftmax(wt)
             '''
             wt = torch.log(wt) / self.temperature
             wt = torch.exp(wt)
@@ -363,17 +363,17 @@ if __name__ == '__main__':
     # dataset
     parser.add_argument('--dset_name', type=str, default='moving_mnist')  #moving_mnist, lpc, bouncing_balls
     # state size
-    parser.add_argument('--z-dim', type=int, default=144)  # 72 144
-    parser.add_argument('--hidden-dim', type=int, default=252) #  216 252
+    parser.add_argument('--z-dim', type=int, default=72)  # 72 144
+    parser.add_argument('--hidden-dim', type=int, default=216) #  216 252
     parser.add_argument('--conv-dim', type=int, default=256)  # 256 512
     parser.add_argument('--block_size', type=int, default=3) # 3  4
     # data size
-    parser.add_argument('--batch-size', type=int, default=64)
+    parser.add_argument('--batch-size', type=int, default=32)
     parser.add_argument('--frame-size', type=int, default=8)
     parser.add_argument('--nsamples', type=int, default=2)
 
     # optimization
-    parser.add_argument('--learn-rate', type=float, default=0.001)
+    parser.add_argument('--learn-rate', type=float, default=0.0005)
     parser.add_argument('--temperature', type=float, default=1.0)
     parser.add_argument('--grad-clip', type=float, default=0.0)
     parser.add_argument('--max-epochs', type=int, default=100)

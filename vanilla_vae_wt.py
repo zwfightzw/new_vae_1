@@ -85,9 +85,6 @@ class FullQDisentangledVAE(nn.Module):
         # zt_1 = torch.zeros(batch_size, self.z_dim).to(device)
         zt_obs_list.append(post_z_1)
 
-        if self.training:
-            self.z_to_z_fwd.sample_masks()
-
         z_fwd, z_c = self.z_to_z_fwd.init_hidden(batch_size)
 
         for t in range(1, seq_size):
@@ -290,16 +287,16 @@ if __name__ == '__main__':
     # dataset
     parser.add_argument('--dset_name', type=str, default='moving_mnist')  # moving_mnist, lpc, bouncing_balls
     # state size
-    parser.add_argument('--z-dim', type=int, default=144)  # 72 144
-    parser.add_argument('--hidden-dim', type=int, default=252)  # 216 252
+    parser.add_argument('--z-dim', type=int, default=72)  # 72 144
+    parser.add_argument('--hidden-dim', type=int, default=216)  # 216 252
     parser.add_argument('--conv-dim', type=int, default=256)  # 256 512
     # data size
-    parser.add_argument('--batch-size', type=int, default=64)
+    parser.add_argument('--batch-size', type=int, default=32)
     parser.add_argument('--frame-size', type=int, default=8)
     parser.add_argument('--nsamples', type=int, default=2)
 
     # optimization
-    parser.add_argument('--learn-rate', type=float, default=0.001)
+    parser.add_argument('--learn-rate', type=float, default=0.0005)
     parser.add_argument('--grad-clip', type=float, default=0.0)
     parser.add_argument('--max-epochs', type=int, default=100)
     parser.add_argument('--gpu_id', type=int, default=1)
