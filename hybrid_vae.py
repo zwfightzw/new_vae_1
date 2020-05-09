@@ -48,7 +48,7 @@ class FullQDisentangledVAE(nn.Module):
         #self.z_rnn = nn.RNN(self.hidden_dim * 2, self.hidden_dim, batch_first=True)
         self.z_post_out = nn.Linear(self.hidden_dim, self.z_dim * 2)
 
-        self.z_prior_out_list = nn.Sequential(nn.Linear(self.hidden_dim, self.hidden_dim//2),nn.ReLU(), nn.Linear(self.hidden_dim//2, self.z_dim*2))
+        self.z_prior_out_list = nn.Sequential(nn.Linear(self.hidden_dim, self.hidden_dim),nn.ReLU(), nn.Linear(self.hidden_dim, self.z_dim*2))
         #self.z_prior_out_list = nn.Linear(self.hidden_dim, self.z_dim * 2).to(device)
 
         self.z_to_c_fwd_list = [GRUCell(input_size=self.z_dim, hidden_size=self.hidden_dim//self.block_size).to(self.device)

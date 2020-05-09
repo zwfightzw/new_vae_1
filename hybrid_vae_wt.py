@@ -50,7 +50,7 @@ class FullQDisentangledVAE(nn.Module):
         self.z_post_out = nn.Linear(self.hidden_dim, self.z_dim * 2)
 
         #self.z_prior_out = nn.Linear(self.hidden_dim, self.z_dim * 2)
-        self.z_prior_out = nn.Sequential(nn.Linear(self.hidden_dim, self.hidden_dim // 2), nn.ReLU(), nn.Linear(self.hidden_dim // 2, self.z_dim * 2))
+        self.z_prior_out = nn.Sequential(nn.Linear(self.hidden_dim, self.hidden_dim), nn.ReLU(), nn.Linear(self.hidden_dim, self.z_dim * 2))
 
         self.z_to_c_fwd_list = ONLSTMCell(input_size=self.z_dim, hidden_size=self.hidden_dim, chunk_size=self.block_size, dropconnect= dropout).to(self.device)
 
