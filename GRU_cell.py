@@ -198,8 +198,8 @@ class ONLSTMCell(nn.Module):
         ingate = ingate * overlap + (cingate - overlap)
         cy = forgetgate * cx + ingate * cell
 
-        hy = outgate * F.tanh(self.c_norm(cy))
-        #hy = outgate * F.tanh(cy)
+        #hy = outgate * F.tanh(self.c_norm(cy))
+        hy = outgate * F.tanh(cy)
         return hy.view(-1, self.hidden_size), cy, (distance_cforget, distance_cin)
 
     def init_hidden(self, bsz):
