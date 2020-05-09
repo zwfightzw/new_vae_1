@@ -126,6 +126,21 @@ class LSTMCell(nn.Module):
                 weight.new(bsz, self.hidden_size).zero_())
 
 
+class LayerNorm(nn.Module):
+
+    def __init__(self, features, eps=1e-6):
+        super(LayerNorm, self).__init__()
+        self.gamma = nn.Parameter(torch.ones(features))
+        self.beta = nn.Parameter(torch.zeros(features))
+        self.eps = eps
+
+    def forward(self, x):
+        mean = x.mean(-1, keepdim=True)
+        std = x.std(-1, keepdim=True)
+        return self.gamma * (x - mean) / (std + self.eps) + self.beta
+
+
+
 class ONLSTMCell(nn.Module):
 
     def __init__(self, input_size, hidden_size, chunk_size, dropconnect=0.):
@@ -137,11 +152,11 @@ class ONLSTMCell(nn.Module):
 
         self.ih = nn.Sequential(
             nn.Linear(input_size, 4 * hidden_size + self.n_chunk * 2, bias=True),
-            # LayerNorm(3 * hidden_size)
+            LayerNorm(4 * hidden_size + self.n_chunk * 2)
         )
         self.hh = LinearDropConnect(hidden_size, hidden_size*4+self.n_chunk*2, bias=True, dropout=dropconnect)
 
-        # self.c_norm = LayerNorm(hidden_size)
+        self.c_norm = LayerNorm(chunk_size)
 
         self.drop_weight_modules = [self.hh]
         self.reset_parameters()
@@ -176,15 +191,15 @@ class ONLSTMCell(nn.Module):
         cell = F.tanh(cell)
         outgate = F.sigmoid(outgate)
 
-        cy = cforgetgate * forgetgate * cx + cingate * ingate * cell
+        #cy = cforgetgate * forgetgate * cx + cingate * ingate * cell
 
         overlap = cforgetgate * cingate
         forgetgate = forgetgate * overlap + (cforgetgate - overlap)
         ingate = ingate * overlap + (cingate - overlap)
-        #cy = forgetgate * cx + ingate * cell
+        cy = forgetgate * cx + ingate * cell
 
-        # hy = outgate * F.tanh(self.c_norm(cy))
-        hy = outgate * F.tanh(cy)
+        hy = outgate * F.tanh(self.c_norm(cy))
+        #hy = outgate * F.tanh(cy)
         return hy.view(-1, self.hidden_size), cy, (distance_cforget, distance_cin)
 
     def init_hidden(self, bsz):
