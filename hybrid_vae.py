@@ -57,7 +57,7 @@ class FullQDisentangledVAE(nn.Module):
         self.z_w_function = nn.Linear(self.hidden_dim, self.block_size) #nn.Sequential(nn.Linear(self.hidden_dim, self.hidden_dim//2),nn.ReLU(), nn.Linear(self.hidden_dim//2, self.block_size))
         # observation encoder / decoder
         self.enc_obs = Encoder(feat_size=self.hidden_dim, output_size=self.conv_dim, channel=channel)
-        self.dec_obs = Decoder(input_size=self.z_dim, feat_size=self.hidden_dim, channel=channel, dataset=dataset)
+        self.dec_obs = Decoder(input_size=self.z_dim+self.hidden_dim, feat_size=self.hidden_dim, channel=channel, dataset=dataset)
 
     def reparameterize(self, mean, logvar, random_sampling=True):
         # Reparametrization occurs only if random sampling is set to true, otherwise mean is returned
@@ -87,11 +87,13 @@ class FullQDisentangledVAE(nn.Module):
         zt_1_lar = zt_1_post[:, self.z_dim:]
 
         post_z_1 = self.reparameterize(zt_1_mean, zt_1_lar, self.training)
-        zt_obs_list.append(post_z_1)
-
         # init wt
         wt = torch.ones(batch_size, self.block_size).to(self.device)
         z_fwd_list = [torch.zeros(batch_size, self.hidden_dim).to(self.device) for i in range(self.block_size)]
+        z_fwd_all = torch.stack(z_fwd_list, dim=2).mean(dim=2).view(batch_size, self.hidden_dim)
+        zt_obs = concat(z_fwd_all, post_z_1)
+
+        zt_obs_list.append(zt_obs)
         for t in range(1, seq_size):
 
             z_post_out = self.z_post_out(lstm_out[:, t])
@@ -118,7 +120,8 @@ class FullQDisentangledVAE(nn.Module):
 
             z_fwd_all = torch.stack(z_fwd_list, dim=2).mean(dim=2).view(batch_size, self.hidden_dim)  #.mean(dim=2)
             # p(xt|zt)
-            zt_obs_list.append(z_post_sample)
+            zt_obs = concat(z_fwd_all, z_post_sample)
+            zt_obs_list.append(zt_obs)
             # update weight, w0<...<wd<=1, d means block_size
             #wt = self.z_w_function(concat(z_fwd_all,z_post_sample))
             wt = self.z_w_function(z_fwd_all)
@@ -250,11 +253,13 @@ class Trainer(object):
             zt_1 = self.model.reparameterize(zt_1_mean, zt_1_lar, self.model.training)
             #zt_1 = [Normal(torch.zeros(self.model.z_dim).to(self.device), torch.ones(self.model.z_dim).to(self.device)).rsample() for i in range(len)]
             #zt_1 = torch.stack(zt_1, dim=0)
-            zt_dec.append(zt_1)
 
             # init wt
             wt = torch.ones(len, self.model.block_size).to(self.device)
             z_fwd_list = [torch.zeros(len, self.model.hidden_dim).to(self.device) for i in range(self.model.block_size)]
+            z_fwd_all = torch.stack(z_fwd_list, dim=2).mean(dim=2).view(len, self.model.hidden_dim)
+            zt_obs = concat(z_fwd_all, zt_1)
+            zt_dec.append(zt_obs)
             for t in range(1, self.model.frames):
                 for fwd_t in range(self.model.block_size):
                     # prior over ct of each block, ct_i~p(ct_i|zt-1_i)
@@ -292,7 +297,8 @@ class Trainer(object):
                 '''
                 # store the prior of ct_i
                 zt = self.model.reparameterize(z_fwd_latent_mean, z_fwd_latent_lar, self.model.training)
-                zt_dec.append(zt)
+                zt_obs = concat(z_fwd_all, zt)
+                zt_dec.append(zt_obs)
 
                 #wt = self.model.z_w_function(concat(z_fwd_all, zt))
                 wt = self.model.z_w_function(z_fwd_all)
