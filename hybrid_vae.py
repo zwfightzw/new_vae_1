@@ -48,13 +48,13 @@ class FullQDisentangledVAE(nn.Module):
         #self.z_rnn = nn.RNN(self.hidden_dim * 2, self.hidden_dim, batch_first=True)
         self.z_post_out = nn.Linear(self.hidden_dim, self.z_dim * 2)
 
-        #self.z_prior_out_list = [nn.Linear(self.hidden_dim//self.block_size, self.z_dim * 2//self.block_size).to(device) for i in range(self.block_size)]
-        self.z_prior_out_list = nn.Linear(self.hidden_dim, self.z_dim * 2).to(device)
+        self.z_prior_out_list = nn.Sequential(nn.Linear(self.hidden_dim, self.hidden_dim//2),nn.ReLU(), nn.Linear(self.hidden_dim//2, self.z_dim*2))
+        #self.z_prior_out_list = nn.Linear(self.hidden_dim, self.z_dim * 2).to(device)
 
         self.z_to_c_fwd_list = [GRUCell(input_size=self.z_dim, hidden_size=self.hidden_dim//self.block_size).to(self.device)
             for i in range(self.block_size)]
 
-        self.z_w_function = nn.Linear(self.hidden_dim, self.block_size) #nn.Sequential(nn.Linear(self.hidden_dim, self.hidden_dim//2),nn.ReLU(), nn.Linear(self.hidden_dim//2, self.block_size))
+        self.z_w_function = nn.Linear(self.hidden_dim, self.hidden_dim) #nn.Sequential(nn.Linear(self.hidden_dim, self.hidden_dim//2),nn.ReLU(), nn.Linear(self.hidden_dim//2, self.block_size))
         # observation encoder / decoder
         self.enc_obs = Encoder(feat_size=self.hidden_dim, output_size=self.conv_dim, channel=channel)
         self.dec_obs = Decoder(input_size=self.z_dim+self.hidden_dim, feat_size=self.hidden_dim, channel=channel, dataset=dataset)
@@ -75,7 +75,7 @@ class FullQDisentangledVAE(nn.Module):
         lstm_out, _ = self.z_lstm(x)
         #lstm_out, _ = self.z_rnn(lstm_out)
 
-        each_block_size = self.z_dim//self.block_size
+        each_block_size = self.hidden_dim//self.block_size
 
         z_post_mean_list = []
         z_post_lar_list = []
@@ -124,15 +124,15 @@ class FullQDisentangledVAE(nn.Module):
             zt_obs_list.append(zt_obs)
             # update weight, w0<...<wd<=1, d means block_size
             #wt = self.z_w_function(concat(z_fwd_all,z_post_sample))
-            #wt = self.z_w_function(z_fwd_all)
-            #wt = cumsoftmax(wt)
-            '''
+            wt = self.z_w_function(z_fwd_all)
+            wt = cumsoftmax(wt)
+
             wt = torch.log(wt) / self.temperature
             wt = torch.exp(wt)
             wt = wt / wt.sum(dim=1).view(-1,1)
             wt = wt.reshape(batch_size, self.block_size, each_block_size)
             wt = wt.sum(dim=2)
-            '''
+
 
             z_prior_fwd = self.z_prior_out_list(z_fwd_all)
             z_fwd_latent_mean = z_prior_fwd[:, :self.z_dim]
@@ -238,7 +238,7 @@ class Trainer(object):
 
     def sample_frames(self, epoch, sample):
         with torch.no_grad():
-            each_block_size = self.model.z_dim // self.model.block_size
+            each_block_size = self.model.hidden_dim // self.model.block_size
             zt_dec = []
             len = sample.shape[0]
             #len = self.samples
@@ -303,13 +303,13 @@ class Trainer(object):
                 #wt = self.model.z_w_function(concat(z_fwd_all, zt))
                 wt = self.model.z_w_function(z_fwd_all)
                 wt = cumsoftmax(wt)
-                '''
+
                 wt = torch.log(wt)/self.model.temperature
                 wt = torch.exp(wt)
                 wt = wt / wt.sum(dim=1)
                 wt = wt.reshape(len, self.model.block_size, each_block_size)
                 wt = wt.sum(dim=2)
-                '''
+
                 # decode observation
                 zt_1 = zt
 
