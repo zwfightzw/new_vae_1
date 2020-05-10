@@ -45,7 +45,7 @@ class FullQDisentangledVAE(nn.Module):
         self.temperature = temperature
 
         #self.z_lstm = nn.LSTM(self.conv_dim, self.hidden_dim//2, 1, bidirectional=True, batch_first=True)
-        self.z_lstm = ONLSTMCell(input_size=self.conv_dim, hidden_size=self.hidden_dim, chunk_size=self.block_size).to(self.device)
+        self.z_lstm = ONLSTMCell(input_size=self.conv_dim, hidden_size=self.hidden_dim, chunk_size=self.hidden_dim//self.block_size).to(self.device)
         #self.z_rnn = nn.RNN(self.hidden_dim * 2, self.hidden_dim, batch_first=True)
         self.z_post_out = nn.Sequential(nn.Linear(self.hidden_dim, self.hidden_dim), nn.ReLU(), nn.Linear(self.hidden_dim, self.z_dim * 2))
 
