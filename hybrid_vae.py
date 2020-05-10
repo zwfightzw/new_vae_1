@@ -3,7 +3,7 @@ import torchvision
 import torch.utils.data
 import torch.nn.init
 import torch.optim as optim
-from GRU_cell import GRUCell
+from GRU_cell import GRUCell, ONLSTMCell
 from modules import *
 import numpy as np
 import datetime
@@ -44,11 +44,12 @@ class FullQDisentangledVAE(nn.Module):
         self.dataset = dataset
         self.temperature = temperature
 
-        self.z_lstm = nn.LSTM(self.conv_dim, self.hidden_dim//2, 1, bidirectional=True, batch_first=True)
+        #self.z_lstm = nn.LSTM(self.conv_dim, self.hidden_dim//2, 1, bidirectional=True, batch_first=True)
+        self.z_lstm = ONLSTMCell(input_size=self.conv_dim, hidden_size=self.hidden_dim, chunk_size=self.block_size).to(self.device)
         #self.z_rnn = nn.RNN(self.hidden_dim * 2, self.hidden_dim, batch_first=True)
-        self.z_post_out = nn.Linear(self.hidden_dim, self.z_dim * 2)
+        self.z_post_out = nn.Sequential(nn.Linear(self.hidden_dim, self.hidden_dim), nn.ReLU(), nn.Linear(self.hidden_dim, self.z_dim * 2))
 
-        self.z_prior_out_list = nn.Linear(self.hidden_dim, self.z_dim * 2).to(device)
+        self.z_prior_out_list = nn.Sequential(nn.Linear(self.hidden_dim, self.hidden_dim), nn.ReLU(), nn.Linear(self.hidden_dim, self.z_dim * 2))
 
         self.z_to_c_fwd_list = [GRUCell(input_size=self.z_dim, hidden_size=self.hidden_dim//self.block_size).to(self.device)
             for i in range(self.block_size)]
@@ -71,8 +72,15 @@ class FullQDisentangledVAE(nn.Module):
     def encode_z(self, x):
         batch_size = x.shape[0]
         seq_size = x.shape[1]
-        lstm_out, _ = self.z_lstm(x)
+        #lstm_out, _ = self.z_lstm(x)
         #lstm_out, _ = self.z_rnn(lstm_out)
+        if self.training:
+            self.z_lstm.sample_masks()
+        z_hidden_post, z_cy_post = self.z_lstm.init_hidden(batch_size)
+        lstm_out = x.new_zeros(batch_size, self.frames, self.hidden_dim)
+        for t in range(self.frames):
+            z_hidden_post, z_cy_post, _ = self.z_lstm(x[:, t], (z_hidden_post, z_cy_post))
+            lstm_out[:, t] = z_hidden_post
 
         each_block_size = self.hidden_dim//self.block_size
 
@@ -242,8 +250,13 @@ class Trainer(object):
             len = sample.shape[0]
             #len = self.samples
             x = self.model.enc_obs(sample.view(-1, *sample.size()[2:])).view(1, 8, -1)
-            lstm_out, _ = self.model.z_lstm(x)
+            #lstm_out, _ = self.model.z_lstm(x)
             #lstm_out, _ = self.model.z_rnn(lstm_out)
+            z_hidden_post, z_cy_post = self.model.z_lstm.init_hidden(len)
+            lstm_out = x.new_zeros(len, self.model.frames, self.model.hidden_dim)
+            for t in range(self.model.frames):
+                z_hidden_post, z_cy_post, _ = self.model.z_lstm(x[:,t], (z_hidden_post, z_cy_post))
+                lstm_out[:, t] = z_hidden_post
 
             zt_1_post = self.model.z_post_out(lstm_out[:, 0])
             zt_1_mean = zt_1_post[:, :self.model.z_dim]
@@ -326,7 +339,7 @@ class Trainer(object):
             torchvision.utils.save_image(image, '%s/epoch%d.png' % (self.recon_path, epoch))
 
     def train_model(self):
-        self.model.train()
+        self.model.eval()
         sample = iter(self.test).next().to(self.device)
         self.sample_frames(0 + 1, sample)
         self.recon_frame(0 + 1, sample)
