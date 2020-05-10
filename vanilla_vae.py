@@ -42,9 +42,9 @@ class FullQDisentangledVAE(nn.Module):
         #self.z_lstm = nn.LSTM(self.conv_dim, self.hidden_dim//2, 1, bidirectional=True, batch_first=True)
         self.z_lstm = LSTMCell(input_size=self.conv_dim, hidden_size=self.hidden_dim).to(self.device)
         #self.z_rnn = nn.RNN(self.hidden_dim *2, self.hidden_dim, batch_first=True)
-        self.z_post_out = nn.Linear(self.hidden_dim, self.z_dim * 2)
+        self.z_post_out = nn.Sequential(nn.Linear(self.hidden_dim, self.hidden_dim), nn.ReLU(), nn.Linear(self.hidden_dim, self.z_dim * 2))
 
-        self.z_prior_out = nn.Linear(self.hidden_dim, self.z_dim * 2).to(device)
+        self.z_prior_out = nn.Sequential(nn.Linear(self.hidden_dim, self.hidden_dim), nn.ReLU(), nn.Linear(self.hidden_dim, self.z_dim * 2))
 
         self.z_to_z_fwd = GRUCell(input_size=self.z_dim, hidden_size=self.hidden_dim).to(device)
 
