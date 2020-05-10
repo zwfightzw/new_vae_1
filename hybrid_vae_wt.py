@@ -35,7 +35,7 @@ class Sprites(torch.utils.data.Dataset):
 
 
 class FullQDisentangledVAE(nn.Module):
-    def __init__(self, block_size, frames, z_dim, conv_dim, hidden_dim, channel, dropout, dataset, device):
+    def __init__(self, block_size, frames, z_dim, conv_dim, hidden_dim, channel, dropout, temperature, dataset, device):
         super(FullQDisentangledVAE, self).__init__()
         self.z_dim = z_dim
         self.frames = frames
@@ -45,14 +45,14 @@ class FullQDisentangledVAE(nn.Module):
         self.device = device
         self.dataset = dataset
 
-        self.z_lstm = ONLSTMCell(input_size=self.conv_dim, hidden_size=self.hidden_dim, chunk_size=self.hidden_dim//self.block_size, dropconnect= dropout).to(self.device)
+        self.z_lstm = ONLSTMCell(input_size=self.conv_dim, hidden_size=self.hidden_dim, chunk_size=self.hidden_dim//self.block_size, temperature=temperature, dropconnect= dropout).to(self.device)
         self.z_rnn = nn.RNN(self.hidden_dim, self.hidden_dim, batch_first=True)
         self.z_post_out = nn.Linear(self.hidden_dim, self.z_dim * 2)
 
         #self.z_prior_out = nn.Linear(self.hidden_dim, self.z_dim * 2)
         self.z_prior_out = nn.Linear(self.hidden_dim, self.z_dim * 2)
 
-        self.z_to_c_fwd_list = ONLSTMCell(input_size=self.z_dim, hidden_size=self.hidden_dim, chunk_size=self.hidden_dim//self.block_size, dropconnect= dropout).to(self.device)
+        self.z_to_c_fwd_list = ONLSTMCell(input_size=self.z_dim, hidden_size=self.hidden_dim, chunk_size=self.hidden_dim//self.block_size,temperature=temperature, dropconnect= dropout).to(self.device)
 
         # observation encoder / decoder
         self.enc_obs = Encoder(feat_size=self.hidden_dim, output_size=self.conv_dim, channel=channel)
@@ -311,6 +311,7 @@ if __name__ == '__main__':
 
     # optimization
     parser.add_argument('--learn-rate', type=float, default=0.0002)
+    parser.add_argument('--temperature', type=float, default=1.5)
     parser.add_argument('--grad-clip', type=float, default=0.0)
     parser.add_argument('--dropout', type=float, default=0.0)
     parser.add_argument('--max-epochs', type=int, default=100)
@@ -338,7 +339,7 @@ if __name__ == '__main__':
         channel = 3
 
     vae = FullQDisentangledVAE(block_size=FLAGS.block_size, frames=FLAGS.frame_size, z_dim=FLAGS.z_dim, hidden_dim=FLAGS.hidden_dim,
-                               conv_dim=FLAGS.conv_dim, channel=channel, dropout=FLAGS.dropout, dataset=FLAGS.dset_name, device=device)
+                               conv_dim=FLAGS.conv_dim, channel=channel, dropout=FLAGS.dropout, temperature = FLAGS.temperature, dataset=FLAGS.dset_name, device=device)
 
     starttime = datetime.datetime.now()
     now = datetime.datetime.now(dateutil.tz.tzlocal())

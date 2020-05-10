@@ -143,12 +143,13 @@ class LayerNorm(nn.Module):
 
 class ONLSTMCell(nn.Module):
 
-    def __init__(self, input_size, hidden_size, chunk_size, dropconnect=0.):
+    def __init__(self, input_size, hidden_size, chunk_size, temperature=1.0, dropconnect=0.):
         super(ONLSTMCell, self).__init__()
         self.input_size = input_size
         self.hidden_size = hidden_size
         self.chunk_size = chunk_size
         self.n_chunk = int(hidden_size / chunk_size)
+        self.temperature = temperature
 
         self.ih = nn.Sequential(
             nn.Linear(input_size, 4 * hidden_size + self.n_chunk * 2, bias=True),
@@ -177,8 +178,18 @@ class ONLSTMCell(nn.Module):
         cingate, cforgetgate = gates[:, :self.n_chunk*2].chunk(2, 1)
         outgate, cell, ingate, forgetgate = gates[:,self.n_chunk*2:].view(-1, self.n_chunk*4, self.chunk_size).chunk(4,1)
 
-        cingate = 1. - cumsoftmax(cingate)
+        cingate = cumsoftmax(cingate)
+        cingate = torch.log(cingate) / self.temperature
+        cingate = torch.exp(cingate)
+        cingate = cingate / cingate.sum(dim=1).view(-1, 1)
+
+        cingate = 1. - cingate
+
         cforgetgate = cumsoftmax(cforgetgate)
+
+        cforgetgate = torch.log(cforgetgate) / self.temperature
+        cforgetgate = torch.exp(cforgetgate)
+        cforgetgate = cforgetgate / cforgetgate.sum(dim=1).view(-1, 1)
 
         distance_cforget = 1. - cforgetgate.sum(dim=-1) / self.n_chunk
         distance_cin = cingate.sum(dim=-1) / self.n_chunk
