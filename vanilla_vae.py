@@ -39,12 +39,11 @@ class FullQDisentangledVAE(nn.Module):
         self.device = device
         self.dataset = dataset
 
-        #self.z_lstm = nn.LSTM(self.conv_dim, self.hidden_dim//2, 1, bidirectional=True, batch_first=True)
-        self.z_lstm = LSTMCell(input_size=self.conv_dim, hidden_size=self.hidden_dim).to(self.device)
-        #self.z_rnn = nn.RNN(self.hidden_dim *2, self.hidden_dim, batch_first=True)
-        self.z_post_out = nn.Sequential(nn.Linear(self.hidden_dim, self.hidden_dim), nn.ReLU(), nn.Linear(self.hidden_dim, self.z_dim * 2))
+        self.z_lstm = nn.LSTM(self.conv_dim, self.hidden_dim//2, 1, bidirectional=True, batch_first=True)
+        self.z_rnn = nn.RNN(self.hidden_dim, self.hidden_dim, batch_first=True)
+        self.z_post_out = nn.Linear(self.hidden_dim, self.z_dim * 2)
 
-        self.z_prior_out = nn.Sequential(nn.Linear(self.hidden_dim, self.hidden_dim), nn.ReLU(), nn.Linear(self.hidden_dim, self.z_dim * 2))
+        self.z_prior_out = nn.Linear(self.hidden_dim, self.z_dim * 2)
 
         self.z_to_z_fwd = GRUCell(input_size=self.z_dim, hidden_size=self.hidden_dim).to(device)
 
@@ -65,13 +64,8 @@ class FullQDisentangledVAE(nn.Module):
     def encode_z(self, x):
         batch_size = x.shape[0]
         seq_size = x.shape[1]
-        #lstm_out, _ = self.z_lstm(x)
-        #lstm_out, _ = self.z_rnn(lstm_out)
-        z_hidden_post, z_cy_post = self.z_lstm.init_hidden(batch_size)
-        lstm_out = x.new_zeros(batch_size, self.frames, self.hidden_dim)
-        for t in range(self.frames):
-            z_hidden_post, z_cy_post = self.z_lstm(x[:, t], (z_hidden_post, z_cy_post))
-            lstm_out[:, t] = z_hidden_post
+        lstm_out, _ = self.z_lstm(x)
+        lstm_out, _ = self.z_rnn(lstm_out)
 
         z_post_mean_list = []
         z_post_lar_list = []
@@ -197,15 +191,9 @@ class Trainer(object):
 
             len = sample.shape[0]
             #len = self.samples
-
             x = self.model.enc_obs(sample.view(-1, *sample.size()[2:])).view(1, 8, -1)
-            #lstm_out, _ = self.model.z_lstm(x)
-            #lstm_out, _ = self.model.z_rnn(lstm_out)
-            z_hidden_post, z_cy_post = self.model.z_lstm.init_hidden(len)
-            lstm_out = x.new_zeros(len, self.model.frames, self.model.hidden_dim)
-            for t in range(self.model.frames):
-                z_hidden_post, z_cy_post = self.model.z_lstm(x[:,t], (z_hidden_post, z_cy_post))
-                lstm_out[:, t] = z_hidden_post
+            lstm_out, _ = self.model.z_lstm(x)
+            lstm_out, _ = self.model.z_rnn(lstm_out)
 
             zt_1_post = self.model.z_post_out(lstm_out[:, 0])
             zt_1_mean = zt_1_post[:, :self.model.z_dim]
@@ -290,7 +278,7 @@ if __name__ == '__main__':
     # dataset
     parser.add_argument('--dset_name', type=str, default='moving_mnist')  #moving_mnist, lpc, bouncing_balls
     # state size
-    parser.add_argument('--z-dim', type=int, default=72)  # 72 144
+    parser.add_argument('--z-dim', type=int, default=36)  # 72 144
     parser.add_argument('--hidden-dim', type=int, default=216) #  216 252
     parser.add_argument('--conv-dim', type=int, default=256)  # 256 512
     # data size
@@ -299,7 +287,7 @@ if __name__ == '__main__':
     parser.add_argument('--nsamples', type=int, default=2)
 
     # optimization
-    parser.add_argument('--learn-rate', type=float, default=0.0005)
+    parser.add_argument('--learn-rate', type=float, default=0.0002)
     parser.add_argument('--grad-clip', type=float, default=0.0)
     parser.add_argument('--max-epochs', type=int, default=100)
     parser.add_argument('--gpu_id', type=int, default=1)

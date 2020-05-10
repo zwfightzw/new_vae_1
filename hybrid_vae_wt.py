@@ -45,14 +45,14 @@ class FullQDisentangledVAE(nn.Module):
         self.device = device
         self.dataset = dataset
 
-        self.z_lstm = ONLSTMCell(input_size=self.conv_dim, hidden_size=self.hidden_dim, chunk_size=self.block_size, dropconnect= dropout).to(self.device)
-        #self.z_rnn = nn.RNN(self.hidden_dim *2, self.hidden_dim, batch_first=True)
-        self.z_post_out = nn.Sequential(nn.Linear(self.hidden_dim, self.hidden_dim), nn.ReLU(), nn.Linear(self.hidden_dim, self.z_dim * 2))
+        self.z_lstm = ONLSTMCell(input_size=self.conv_dim, hidden_size=self.hidden_dim, chunk_size=self.hidden_dim//self.block_size, dropconnect= dropout).to(self.device)
+        self.z_rnn = nn.RNN(self.hidden_dim, self.hidden_dim, batch_first=True)
+        self.z_post_out = nn.Linear(self.hidden_dim, self.z_dim * 2)
 
         #self.z_prior_out = nn.Linear(self.hidden_dim, self.z_dim * 2)
-        self.z_prior_out = nn.Sequential(nn.Linear(self.hidden_dim, self.hidden_dim), nn.ReLU(), nn.Linear(self.hidden_dim, self.z_dim * 2))
+        self.z_prior_out = nn.Linear(self.hidden_dim, self.z_dim * 2)
 
-        self.z_to_c_fwd_list = ONLSTMCell(input_size=self.z_dim, hidden_size=self.hidden_dim, chunk_size=self.block_size, dropconnect= dropout).to(self.device)
+        self.z_to_c_fwd_list = ONLSTMCell(input_size=self.z_dim, hidden_size=self.hidden_dim, chunk_size=self.hidden_dim//self.block_size, dropconnect= dropout).to(self.device)
 
         # observation encoder / decoder
         self.enc_obs = Encoder(feat_size=self.hidden_dim, output_size=self.conv_dim, channel=channel)
@@ -78,7 +78,7 @@ class FullQDisentangledVAE(nn.Module):
         for t in range(self.frames):
             z_hidden_post, z_cy_post, _ = self.z_lstm(x[:, t], (z_hidden_post, z_cy_post))
             lstm_out[:, t] = z_hidden_post
-        #lstm_out, _ = self.z_rnn(lstm_out)
+        lstm_out, _ = self.z_rnn(lstm_out)
 
         z_post_mean_list = []
         z_post_lar_list = []
@@ -300,7 +300,7 @@ if __name__ == '__main__':
     # dataset
     parser.add_argument('--dset_name', type=str, default='moving_mnist')  # moving_mnist, lpc, bouncing_balls
     # state size
-    parser.add_argument('--z-dim', type=int, default=72)  # 72 144
+    parser.add_argument('--z-dim', type=int, default=32)  # 72 144
     parser.add_argument('--hidden-dim', type=int, default=216)  # 216 252
     parser.add_argument('--conv-dim', type=int, default=256)  # 256 512
     parser.add_argument('--block_size', type=int, default=3)  # 3 (84), 4(63),  6 (42), 12(21)
@@ -310,7 +310,7 @@ if __name__ == '__main__':
     parser.add_argument('--nsamples', type=int, default=2)
 
     # optimization
-    parser.add_argument('--learn-rate', type=float, default=0.0005)
+    parser.add_argument('--learn-rate', type=float, default=0.0002)
     parser.add_argument('--grad-clip', type=float, default=0.0)
     parser.add_argument('--dropout', type=float, default=0.0)
     parser.add_argument('--max-epochs', type=int, default=100)
