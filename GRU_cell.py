@@ -139,8 +139,6 @@ class LayerNorm(nn.Module):
         std = x.std(-1, keepdim=True)
         return self.gamma * (x - mean) / (std + self.eps) + self.beta
 
-
-
 class ONLSTMCell(nn.Module):
 
     def __init__(self, input_size, hidden_size, chunk_size, temperature=1.0, dropconnect=0.):
@@ -152,12 +150,9 @@ class ONLSTMCell(nn.Module):
         self.temperature = temperature
 
         self.ih = nn.Sequential(
-            nn.Linear(input_size, 4 * hidden_size + self.n_chunk * 2, bias=True),
-            LayerNorm(4 * hidden_size + self.n_chunk * 2)
+            nn.Linear(input_size, 4 * hidden_size + self.n_chunk * 2, bias=True)
         )
         self.hh = LinearDropConnect(hidden_size, hidden_size*4+self.n_chunk*2, bias=True, dropout=dropconnect)
-
-        self.c_norm = LayerNorm(chunk_size)
 
         self.drop_weight_modules = [self.hh]
         self.reset_parameters()
