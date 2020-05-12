@@ -48,7 +48,7 @@ class FullQDisentangledVAE(nn.Module):
         self.z_post_out = nn.Linear(self.hidden_dim, self.z_dim * 2)
 
         self.z_prior_out_list = nn.Linear(self.hidden_dim, self.z_dim * 2)
-        self.z_to_c_fwd_list = [GRUCell(input_size=self.z_dim, hidden_size=self.hidden_dim).to(self.device)
+        self.z_to_c_fwd_list = [GRUCell(input_size=self.z_dim, hidden_size=self.hidden_dim//self.block_size).to(self.device)
             for i in range(self.block_size)]
 
         self.z_w_function = nn.Linear(self.hidden_dim, self.hidden_dim) #nn.Sequential(nn.Linear(self.hidden_dim, self.hidden_dim//2),nn.ReLU(), nn.Linear(self.hidden_dim//2, self.block_size))
@@ -85,8 +85,8 @@ class FullQDisentangledVAE(nn.Module):
         post_z_1 = self.reparameterize(zt_1_mean, zt_1_lar, self.training)
         # init wt
         wt = torch.ones(batch_size, self.block_size).to(self.device)
-        z_fwd_list = [torch.zeros(batch_size, self.hidden_dim).to(self.device) for i in range(self.block_size)]
-        z_fwd_all = torch.stack(z_fwd_list, dim=2).mean(dim=2).view(batch_size, self.hidden_dim)
+        z_fwd_list = [torch.zeros(batch_size, self.hidden_dim//self.block_size).to(self.device) for i in range(self.block_size)]
+        z_fwd_all = torch.stack(z_fwd_list, dim=2).view(batch_size, self.hidden_dim)
         zt_obs = concat(z_fwd_all, post_z_1)
 
         zt_obs_list.append(zt_obs)
@@ -114,7 +114,7 @@ class FullQDisentangledVAE(nn.Module):
 
                 z_fwd_list[fwd_t] = self.z_to_c_fwd_list[fwd_t](post_z_1, z_fwd_list[fwd_t],w=wt[:,fwd_t].view(-1,1))
 
-            z_fwd_all = torch.stack(z_fwd_list, dim=2).mean(dim=2).view(batch_size, self.hidden_dim)  #.mean(dim=2)
+            z_fwd_all = torch.stack(z_fwd_list, dim=2).view(batch_size, self.hidden_dim)  #.mean(dim=2)
             # p(xt|zt)
             zt_obs = concat(z_fwd_all, z_post_sample)
             zt_obs_list.append(zt_obs)
@@ -251,8 +251,8 @@ class Trainer(object):
 
             # init wt
             wt = torch.ones(len, self.model.block_size).to(self.device)
-            z_fwd_list = [torch.zeros(len, self.model.hidden_dim).to(self.device) for i in range(self.model.block_size)]
-            z_fwd_all = torch.stack(z_fwd_list, dim=2).mean(dim=2).view(len, self.model.hidden_dim)
+            z_fwd_list = [torch.zeros(len, self.model.hidden_dim//self.model.block_size).to(self.device) for i in range(self.model.block_size)]
+            z_fwd_all = torch.stack(z_fwd_list, dim=2).view(len, self.model.hidden_dim)
             zt_obs = concat(z_fwd_all, zt_1)
             zt_dec.append(zt_obs)
             for t in range(1, self.model.frames):
@@ -272,7 +272,7 @@ class Trainer(object):
                                                                     w=wt[:, fwd_t].view(-1, 1))
 
 
-                z_fwd_all = torch.stack(z_fwd_list, dim=2).mean(dim=2).view(len, self.model.hidden_dim)  #.mean(dim=2)
+                z_fwd_all = torch.stack(z_fwd_list, dim=2).view(len, self.model.hidden_dim)  #.mean(dim=2)
                 # update weight, w0<...<wd<=1, d means block_size
 
                 z_prior_fwd = self.model.z_prior_out_list(z_fwd_all)
