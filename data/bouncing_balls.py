@@ -23,4 +23,4 @@ class BouncingBalls(data.Dataset):
     return single_sequence
 
   def __len__(self):
-    return 3000
+    return 10000
