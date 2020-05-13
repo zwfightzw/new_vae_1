@@ -33,7 +33,7 @@ class Sprites(torch.utils.data.Dataset):
 
 
 def sample_gumbel(shape, eps=1e-20):
-    U = torch.rand(shape)
+    U = torch.rand(shape).to(device)
     return -torch.log(-torch.log(U + eps) + eps)
 
 
@@ -210,7 +210,7 @@ class FullQDisentangledVAE(nn.Module):
         seq_len = x.shape[1]
         conv_x = self.enc_obs(x.view(-1, *x.size()[2:])).view(num_samples, seq_len, -1)
         zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, z = self.encode_z(conv_x)
-        z = gumbel_softmax(z, temp, self.z_dim)
+        #z = gumbel_softmax(z, temp, self.z_dim)
         recon_x = self.dec_obs(z.view(num_samples * seq_len, -1)).view(num_samples, seq_len, *x.size()[2:])
         return zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, z, recon_x
 
