@@ -353,7 +353,7 @@ class Trainer(object):
                 # store the prior of ct_i
                 zt = self.model.reparameterize(z_fwd_latent_mean, z_fwd_latent_lar, self.model.training)
                 #zt_obs = concat(z_fwd_all, zt)
-                zt = gumbel_softmax(zt,1.0,self.model.z_dim)
+                #zt = gumbel_softmax(zt,1.0,self.model.z_dim)
                 zt_dec.append(zt)
 
                 #wt = self.model.z_w_function(concat(z_fwd_all, zt))
