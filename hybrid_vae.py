@@ -32,6 +32,37 @@ class Sprites(torch.utils.data.Dataset):
         return torch.load(self.path + '/%d.sprite' % (idx + 1))
 
 
+def sample_gumbel(shape, eps=1e-20):
+    U = torch.rand(shape)
+    return -torch.log(-torch.log(U + eps) + eps)
+
+
+def gumbel_softmax_sample(logits, temperature):
+    y = logits + sample_gumbel(logits.size())
+    return F.softmax(y / temperature, dim=-1)
+
+
+def gumbel_softmax(logits, temperature, latent_dim, hard=False):
+    """
+    ST-gumple-softmax
+    input: [*, n_class]
+    return: flatten --> [*, n_class] an one-hot vector
+    """
+    y = gumbel_softmax_sample(logits, temperature)
+
+    if not hard:
+        return y.view(-1, latent_dim)
+
+    shape = y.size()
+    _, ind = y.max(dim=-1)
+    y_hard = torch.zeros_like(y).view(-1, shape[-1])
+    y_hard.scatter_(1, ind.view(-1, 1), 1)
+    y_hard = y_hard.view(*shape)
+    # Set gradients w.r.t. y_hard gradients w.r.t. y
+    y_hard = (y_hard - y).detach() + y
+    return y_hard.view(-1, latent_dim)
+
+
 class FullQDisentangledVAE(nn.Module):
     def __init__(self, temperature, frames, z_dim, conv_dim, hidden_dim, block_size, channel, dataset, device):
         super(FullQDisentangledVAE, self).__init__()
@@ -174,11 +205,12 @@ class FullQDisentangledVAE(nn.Module):
 
         return zt_1_mean, zt_1_lar, z_post_mean_list, z_post_lar_list, z_prior_mean_list, z_prior_lar_list, zt_obs_list
 
-    def forward(self, x):
+    def forward(self, x, temp):
         num_samples = x.shape[0]
         seq_len = x.shape[1]
         conv_x = self.enc_obs(x.view(-1, *x.size()[2:])).view(num_samples, seq_len, -1)
         zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, z = self.encode_z(conv_x)
+        z = gumbel_softmax(z, temp, self.z_dim)
         recon_x = self.dec_obs(z.view(num_samples * seq_len, -1)).view(num_samples, seq_len, *x.size()[2:])
         return zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, z, recon_x
 
@@ -321,6 +353,7 @@ class Trainer(object):
                 # store the prior of ct_i
                 zt = self.model.reparameterize(z_fwd_latent_mean, z_fwd_latent_lar, self.model.training)
                 #zt_obs = concat(z_fwd_all, zt)
+                zt = gumbel_softmax(zt,1.0,self.model.z_dim)
                 zt_dec.append(zt)
 
                 #wt = self.model.z_w_function(concat(z_fwd_all, zt))
@@ -343,18 +376,21 @@ class Trainer(object):
 
     def recon_frame(self, epoch, original):
         with torch.no_grad():
-            _, _, _, _, _, _,_, recon = self.model(original)
+            _, _, _, _, _, _,_, recon = self.model(original, 1.0)
             image = torch.cat((original, recon), dim=0)
             print(image.shape)
             image = image.view(16, channel, 64, 64)
             torchvision.utils.save_image(image, '%s/epoch%d.png' % (self.recon_path, epoch))
 
     def train_model(self):
+        temp_min = 0.5
+        ANNEAL_RATE = 0.00003
         self.model.eval()
         sample = iter(self.test).next().to(self.device)
         self.sample_frames(0 + 1, sample)
         self.recon_frame(0 + 1, sample)
         self.model.train()
+        temp = FLAGS.temperature
         for epoch in range(self.start_epoch, self.epochs):
             losses = []
             kl_loss = []
@@ -362,13 +398,16 @@ class Trainer(object):
             for i, data in enumerate(self.train):
                 data = data.to(self.device)
                 self.optimizer.zero_grad()
-                zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, z, recon_x = self.model(data)
+                zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, z, recon_x = self.model(data, temp)
                 loss, kl = loss_fn(self.model.dataset, data, recon_x, zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar)
                 write_log('mse loss is %f, kl loss is %f'%(loss, kl), self.log_path)
+                print('index is %d, mse loss is %f, kl loss is %f'%(i, loss, kl))
                 if self.grad_clip > 0.0:
                     nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
                 loss.backward()
                 self.optimizer.step()
+                if i % 50 == 1:
+                    temp = np.maximum(temp * np.exp(-ANNEAL_RATE * i), temp_min)
                 kl_loss.append(kl.item())
                 losses.append(loss.item())
             meanloss = np.mean(losses)

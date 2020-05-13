@@ -259,6 +259,7 @@ class Trainer(object):
                                    prior_zt_lar)
                 loss.backward()
                 write_log('mse loss is %f, kl loss is %f'%(loss, kl), self.log_path)
+                print('index is %d, mse loss is %f, kl loss is %f'%(i, loss, kl))
                 if self.grad_clip > 0.0:
                     nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
                 self.optimizer.step()
