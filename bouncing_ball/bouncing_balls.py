@@ -13,15 +13,12 @@
 
 from pylab import *
 import numpy as np
+import cv2 as cv
 
 
 FRICTION = False # whether there is friction in the system
 NUM_BALLS = 2  # num of balls in the simulation
 SIZE=10
-
-
-
-
 def norm(x): return sqrt((x**2).sum())
 def sigmoid(x):        return 1./(1.+exp(-x))
 
@@ -97,7 +94,9 @@ def bounce_n(T=128, n=2, r=None, m=None):
 
 							new_v_i, new_v_j = new_speeds(m[i], m[j], v_i, v_j)
 
-							v[i]+= w*(new_v_i - v_i)
+							rand_v = np.random.rand()
+
+							v[i]+= w*(new_v_i - v_i + rand_v)
 							v[j]+= w*(new_v_j - v_j)
 
 	return X, V
@@ -110,15 +109,20 @@ def matricize(X,V,res,r=None):
 	T, n= shape(X)[0:2]
 	if r is None: r=array([4.0]*n)
 
-	A=zeros((T,res,res, 3), dtype='float')
+	A=np.zeros((T,res,res, 3), dtype='float')
+
+	point_color = (0, 0, 255)
 
 	[I, J]=meshgrid(ar(0,1,1./res)*SIZE, ar(0,1,1./res)*SIZE)
 
 	for t in range(T):
 		for i in range(n):
+			img = A[t]
+			#cv.circle(img, (int(X[t,i,0]), int(X[t,i,1])), int(r[i]), point_color, -1)
 			A[t, :, :, 1] += exp(-(  ((I-X[t,i,0])**2+(J-X[t,i,1])**2)/(r[i]**2)  )**4    )
-			A[t, :, :, 0] += 1.0 * (V[t,i,0] + .5) * exp(-(  ((I-X[t,i,0])**2+(J-X[t,i,1])**2)/(r[i]**2)  )**4    )
-			A[t, :, :, 2] += 1.0 * (V[t,i,1] + .5) * exp(-(  ((I-X[t,i,0])**2+(J-X[t,i,1])**2)/(r[i]**2)  )**4    )
+			A[t, :, :, 0] += 1.0 * (V[t,i,0] + .6) * exp(-(  ((I-X[t,i,0])**2+(J-X[t,i,1])**2)/(r[i]**2)  )**4    )
+			A[t, :, :, 2] += 1.0 * (V[t,i,1] + .6) * exp(-(  ((I-X[t,i,0])**2+(J-X[t,i,1])**2)/(r[i]**2)  )**4    )
+			#A[t] += img/255
 
 		A[t,:,:,0][A[t,:,:,0]>1]=1
 		A[t,:,:,1][A[t,:,:,1]>1]=1
