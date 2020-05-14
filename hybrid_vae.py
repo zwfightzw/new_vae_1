@@ -75,13 +75,11 @@ class FullQDisentangledVAE(nn.Module):
         self.dataset = dataset
         self.temperature = temperature
 
-        #self.z_lstm = nn.LSTM(self.conv_dim, self.hidden_dim, 1, bidirectional=True, batch_first=True)
-        self.z_lstm1 = LSTMCell(input_size=self.conv_dim, hidden_size=self.hidden_dim).to(device)
-        self.z_lstm2 = LSTMCell(input_size=self.conv_dim, hidden_size=self.hidden_dim).to(device)
+        self.z_lstm = nn.LSTM(self.conv_dim, self.hidden_dim//2, 1, bidirectional=True, batch_first=True)
         self.z_post_out = nn.Linear(self.hidden_dim, self.z_dim * 2)
 
         self.z_prior_out_list = nn.Linear(self.hidden_dim, self.z_dim * 2)
-        self.z_to_c_fwd_list = [GRUCell(input_size=self.z_dim, hidden_size=self.hidden_dim).to(self.device)
+        self.z_to_c_fwd_list = [GRUCell(input_size=self.z_dim, hidden_size=self.hidden_dim//self.block_size).to(self.device)
             for i in range(self.block_size)]
 
         self.z_w_function = nn.Linear(self.hidden_dim, self.block_size) #nn.Sequential(nn.Linear(self.hidden_dim, self.hidden_dim//2),nn.ReLU(), nn.Linear(self.hidden_dim//2, self.block_size))
@@ -102,20 +100,8 @@ class FullQDisentangledVAE(nn.Module):
     def encode_z(self, x):
         batch_size = x.shape[0]
         seq_size = x.shape[1]
-        z_fwd1, z_c1 = self.z_lstm1.init_hidden(batch_size)
-        z_fwd2, z_c2 = self.z_lstm2.init_hidden(batch_size)
-        lstm_out1 = x.new_zeros(batch_size, seq_size, self.hidden_dim)
-        lstm_out2 = x.new_zeros(batch_size, seq_size, self.hidden_dim)
-        for i in range(seq_size):
-            (z_fwd1, z_c1) = self.z_lstm1(x[:,i], (z_fwd1, z_c1))
-            lstm_out1[:,i] = z_fwd1
-        for j in reversed(range(seq_size)):
-            (z_fwd2, z_c2) = self.z_lstm2(x[:,j], (z_fwd2, z_c2))
-            lstm_out2[:,j] = z_fwd2
 
-        lstm_out = (lstm_out1 + lstm_out2)/2
-
-        #lstm_out, _ = self.z_lstm(x)
+        lstm_out, _ = self.z_lstm(x)
         #lstm_out, _ = self.z_rnn(lstm_out)
         each_block_size = self.z_dim//self.block_size
 
@@ -131,7 +117,7 @@ class FullQDisentangledVAE(nn.Module):
         post_z_1 = self.reparameterize(zt_1_mean, zt_1_lar, self.training)
         # init wt
         wt = torch.ones(batch_size, self.block_size).to(self.device)
-        z_fwd_list = [torch.zeros(batch_size, self.hidden_dim).to(self.device) for i in range(self.block_size)]
+        z_fwd_list = [torch.zeros(batch_size, self.hidden_dim//self.block_size).to(self.device) for i in range(self.block_size)]
         #z_fwd_all = torch.stack(z_fwd_list, dim=2).mean(dim=2).view(batch_size, self.hidden_dim)
         #zt_obs = concat(z_fwd_all, post_z_1)
 
@@ -163,7 +149,7 @@ class FullQDisentangledVAE(nn.Module):
 
                 z_fwd_list[fwd_t] = self.z_to_c_fwd_list[fwd_t](zt_1_tmp, z_fwd_list[fwd_t],w=wt[:,fwd_t].view(-1,1))
 
-            z_fwd_all = torch.stack(z_fwd_list, dim=2).mean(dim=2).view(batch_size, self.hidden_dim)  #.mean(dim=2)
+            z_fwd_all = torch.stack(z_fwd_list, dim=2).view(batch_size, self.hidden_dim)  #.mean(dim=2)
             # p(xt|zt)
             #zt_obs = concat(z_fwd_all, z_post_sample)
             zt_obs_list.append(z_post_sample)
@@ -285,21 +271,9 @@ class Trainer(object):
             print(sample.shape)
             #len = self.samples
             x = self.model.enc_obs(sample.view(-1, *sample.size()[2:])).view(1, sample.shape[1], -1)
-            #lstm_out, _ = self.model.z_lstm(x)
+            lstm_out, _ = self.model.z_lstm(x)
             #lstm_out, _ = self.model.z_rnn(lstm_out)
 
-            z_fwd1, z_c1 = self.model.z_lstm1.init_hidden(len)
-            z_fwd2, z_c2 = self.model.z_lstm2.init_hidden(len)
-            lstm_out1 = x.new_zeros(len, self.model.frames, self.model.hidden_dim)
-            lstm_out2 = x.new_zeros(len, self.model.frames, self.model.hidden_dim)
-            for i in range(self.model.frames):
-                (z_fwd1, z_c1) = self.model.z_lstm1(x[:, i], (z_fwd1, z_c1))
-                lstm_out1[:, i] = z_fwd1
-            for j in reversed(range(self.model.frames)):
-                (z_fwd2, z_c2) = self.model.z_lstm2(x[:, j], (z_fwd2, z_c2))
-                lstm_out2[:, j] = z_fwd2
-
-            lstm_out = (lstm_out1 + lstm_out2) / 2
 
             zt_1_post = self.model.z_post_out(lstm_out[:, 0])
             zt_1_mean = zt_1_post[:, :self.model.z_dim]
@@ -315,7 +289,7 @@ class Trainer(object):
             store_wt = []
             store_wt.append(wt[0].detach().cpu().numpy())
 
-            z_fwd_list = [torch.zeros(len, self.model.hidden_dim).to(self.device) for i in range(self.model.block_size)]
+            z_fwd_list = [torch.zeros(len, self.model.hidden_dim//self.model.block_size).to(self.device) for i in range(self.model.block_size)]
             #z_fwd_all = torch.stack(z_fwd_list, dim=2).mean(dim=2).view(len, self.model.hidden_dim)
             #zt_obs = concat(z_fwd_all, zt_1)
             zt_dec.append(zt_1)
@@ -336,7 +310,7 @@ class Trainer(object):
                                                                     w=wt[:, fwd_t].view(-1, 1))
 
 
-                z_fwd_all = torch.stack(z_fwd_list, dim=2).mean(dim=2).view(len, self.model.hidden_dim)  #.mean(dim=2)
+                z_fwd_all = torch.stack(z_fwd_list, dim=2).view(len, self.model.hidden_dim)  #.mean(dim=2)
                 # update weight, w0<...<wd<=1, d means block_size
 
                 z_prior_fwd = self.model.z_prior_out_list(z_fwd_all)
