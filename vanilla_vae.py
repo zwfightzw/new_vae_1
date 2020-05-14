@@ -63,13 +63,8 @@ class FullQDisentangledVAE(nn.Module):
     def encode_z(self, x):
         batch_size = x.shape[0]
         seq_size = x.shape[1]
-        #lstm_out, _ = self.z_lstm(x)
+        lstm_out, _ = self.z_lstm(x)
         #lstm_out, _ = self.z_rnn(lstm_out)
-        z_fwd1, z_c1 = self.z_lstm.init_hidden(batch_size)
-        lstm_out = x.new_zeros(batch_size, seq_size, self.hidden_dim)
-        for i in range(seq_size):
-            (z_fwd1, z_c1) = self.z_lstm(x[:,i], (z_fwd1, z_c1))
-            lstm_out[:,i] = z_fwd1
 
         z_post_mean_list = []
         z_post_lar_list = []
@@ -196,13 +191,9 @@ class Trainer(object):
             len = sample.shape[0]
             #len = self.samples
             x = self.model.enc_obs(sample.view(-1, *sample.size()[2:])).view(1, sample.shape[1], -1)
-            #lstm_out, _ = self.model.z_lstm(x)
+            lstm_out, _ = self.model.z_lstm(x)
             #lstm_out, _ = self.model.z_rnn(lstm_out)
-            z_fwd1, z_c1 = self.model.z_lstm.init_hidden(len)
-            lstm_out = x.new_zeros(len, self.model.frames, self.model.hidden_dim)
-            for i in range(self.model.frames):
-                (z_fwd1, z_c1) = self.model.z_lstm(x[:, i], (z_fwd1, z_c1))
-                lstm_out[:, i] = z_fwd1
+
 
             zt_1_post = self.model.z_post_out(lstm_out[:, 0])
             zt_1_mean = zt_1_post[:, :self.model.z_dim]
