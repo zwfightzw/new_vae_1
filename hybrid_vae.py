@@ -199,8 +199,12 @@ class FullQDisentangledVAE(nn.Module):
         recon_x = self.dec_obs(z.view(num_samples * seq_len, -1)).view(num_samples, seq_len, *x.size()[2:])
         return zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, z, recon_x
 
-def cumsoftmax(x, dim=-1):
-    return torch.cumsum(F.softmax(x, dim=dim), dim=dim)
+def cumsoftmax(x, temp=0.4, dim=-1):
+    x = F.softmax(x, dim=dim)
+    x = torch.log(x)/temp
+    x = torch.exp(x)
+    x = x / torch.sum(x)
+    return torch.cumsum(x, dim=dim)
 
 def loss_fn(dataset, original_seq, recon_seq, zt_1_mean, zt_1_lar,z_post_mean, z_post_logvar, z_prior_mean, z_prior_logvar):
 
