@@ -84,7 +84,7 @@ class FullQDisentangledVAE(nn.Module):
         self.z_to_c_fwd_list = [GRUCell(input_size=self.z_dim, hidden_size=self.hidden_dim).to(self.device)
             for i in range(self.block_size)]
 
-        self.z_w_function = nn.Linear(self.hidden_dim, self.hidden_dim) #nn.Sequential(nn.Linear(self.hidden_dim, self.hidden_dim//2),nn.ReLU(), nn.Linear(self.hidden_dim//2, self.block_size))
+        self.z_w_function = nn.Linear(self.hidden_dim, self.block_size) #nn.Sequential(nn.Linear(self.hidden_dim, self.hidden_dim//2),nn.ReLU(), nn.Linear(self.hidden_dim//2, self.block_size))
         # observation encoder / decoder
         self.enc_obs = Encoder(feat_size=self.hidden_dim, output_size=self.conv_dim, channel=channel)
         self.dec_obs = Decoder(input_size=self.z_dim, feat_size=self.hidden_dim, channel=channel, dataset=dataset)
@@ -117,7 +117,7 @@ class FullQDisentangledVAE(nn.Module):
 
         #lstm_out, _ = self.z_lstm(x)
         #lstm_out, _ = self.z_rnn(lstm_out)
-        each_block_size = self.hidden_dim//self.block_size
+        each_block_size = self.z_dim//self.block_size
 
         z_post_mean_list = []
         z_post_lar_list = []
@@ -134,6 +134,9 @@ class FullQDisentangledVAE(nn.Module):
         z_fwd_list = [torch.zeros(batch_size, self.hidden_dim).to(self.device) for i in range(self.block_size)]
         #z_fwd_all = torch.stack(z_fwd_list, dim=2).mean(dim=2).view(batch_size, self.hidden_dim)
         #zt_obs = concat(z_fwd_all, post_z_1)
+
+        store_wt = []
+        store_wt.append(wt[0].detach().cpu().numpy())
 
         zt_obs_list.append(post_z_1)
         for t in range(1, seq_size):
@@ -158,7 +161,7 @@ class FullQDisentangledVAE(nn.Module):
                     zt_1_tmp = concat(post_z_1[:, (fwd_t - 1) * each_block_size: (fwd_t + 1) * each_block_size],
                                       torch.zeros(batch_size, (self.block_size - 2) * each_block_size).to(self.device))
 
-                z_fwd_list[fwd_t] = self.z_to_c_fwd_list[fwd_t](post_z_1, z_fwd_list[fwd_t],w=wt[:,fwd_t].view(-1,1))
+                z_fwd_list[fwd_t] = self.z_to_c_fwd_list[fwd_t](zt_1_tmp, z_fwd_list[fwd_t],w=wt[:,fwd_t].view(-1,1))
 
             z_fwd_all = torch.stack(z_fwd_list, dim=2).mean(dim=2).view(batch_size, self.hidden_dim)  #.mean(dim=2)
             # p(xt|zt)
@@ -169,11 +172,7 @@ class FullQDisentangledVAE(nn.Module):
             wt = self.z_w_function(z_fwd_all)
             wt = cumsoftmax(wt)
 
-            wt = torch.log(wt) / self.temperature
-            wt = torch.exp(wt)
-            wt = wt / wt.sum(dim=1).view(-1,1)
-            wt = wt.reshape(batch_size, self.block_size, each_block_size)
-            wt = wt.sum(dim=2)
+            store_wt.append(wt[0].detach().cpu().numpy())
 
             z_prior_fwd = self.z_prior_out_list(z_fwd_all)
             z_fwd_latent_mean = z_prior_fwd[:, :self.z_dim]
@@ -202,17 +201,19 @@ class FullQDisentangledVAE(nn.Module):
         z_post_lar_list = torch.stack(z_post_lar_list, dim=1)
         z_prior_mean_list = torch.stack(z_prior_mean_list, dim=1)
         z_prior_lar_list = torch.stack(z_prior_lar_list, dim=1)
+        print('***************************')
+        print(store_wt)
 
-        return zt_1_mean, zt_1_lar, z_post_mean_list, z_post_lar_list, z_prior_mean_list, z_prior_lar_list, zt_obs_list
+        return zt_1_mean, zt_1_lar, z_post_mean_list, z_post_lar_list, z_prior_mean_list, z_prior_lar_list, zt_obs_list, store_wt
 
     def forward(self, x, temp):
         num_samples = x.shape[0]
         seq_len = x.shape[1]
         conv_x = self.enc_obs(x.view(-1, *x.size()[2:])).view(num_samples, seq_len, -1)
-        zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, z = self.encode_z(conv_x)
+        zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, z, store_wt = self.encode_z(conv_x)
         #z = gumbel_softmax(z, temp, self.z_dim)
         recon_x = self.dec_obs(z.view(num_samples * seq_len, -1)).view(num_samples, seq_len, *x.size()[2:])
-        return zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, z, recon_x
+        return zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, z, recon_x, store_wt
 
 def cumsoftmax(x, dim=-1):
     return torch.cumsum(F.softmax(x, dim=dim), dim=dim)
@@ -280,11 +281,11 @@ class Trainer(object):
 
     def sample_frames(self, epoch, sample):
         with torch.no_grad():
-            each_block_size = self.model.hidden_dim // self.model.block_size
+            each_block_size = self.model.z_dim // self.model.block_size
             zt_dec = []
             len = sample.shape[0]
             #len = self.samples
-            x = self.model.enc_obs(sample.view(-1, *sample.size()[2:])).view(1, 8, -1)
+            x = self.model.enc_obs(sample.view(-1, *sample.size()[2:])).view(1, sample.shape[1], -1)
             #lstm_out, _ = self.model.z_lstm(x)
             #lstm_out, _ = self.model.z_rnn(lstm_out)
 
@@ -328,7 +329,7 @@ class Trainer(object):
                         zt_1_tmp = concat(zt_1[:, (fwd_t - 1) * each_block_size: (fwd_t + 1) * each_block_size],
                                           torch.zeros(len, (self.model.block_size-2)*each_block_size).to(self.device))
 
-                    z_fwd_list[fwd_t] = self.model.z_to_c_fwd_list[fwd_t](zt_1, z_fwd_list[fwd_t],
+                    z_fwd_list[fwd_t] = self.model.z_to_c_fwd_list[fwd_t](zt_1_tmp, z_fwd_list[fwd_t],
                                                                     w=wt[:, fwd_t].view(-1, 1))
 
 
@@ -360,27 +361,22 @@ class Trainer(object):
                 wt = self.model.z_w_function(z_fwd_all)
                 wt = cumsoftmax(wt)
 
-                wt = torch.log(wt)/self.model.temperature
-                wt = torch.exp(wt)
-                wt = wt / wt.sum(dim=1)
-                wt = wt.reshape(len, self.model.block_size, each_block_size)
-                wt = wt.sum(dim=2)
-
                 # decode observation
                 zt_1 = zt
 
             zt_dec = torch.stack(zt_dec, dim=1)
             recon_x = self.model.dec_obs(zt_dec.view(len * self.model.frames, -1)).view(len, self.model.frames, -1)
-            recon_x = recon_x.view(len * 8, self.channel, 64, 64)
+            recon_x = recon_x.view(len * x.shape[1], self.channel, 64, 64)
             torchvision.utils.save_image(recon_x, '%s/epoch%d.png' % (self.sample_path, epoch))
 
     def recon_frame(self, epoch, original):
         with torch.no_grad():
-            _, _, _, _, _, _,_, recon = self.model(original, 1.0)
+            _, _, _, _, _, _,_, recon, store_wt = self.model(original, 1.0)
             image = torch.cat((original, recon), dim=0)
             print(image.shape)
-            image = image.view(16, channel, 64, 64)
+            image = image.view(2*original.shape[1], channel, 64, 64)
             torchvision.utils.save_image(image, '%s/epoch%d.png' % (self.recon_path, epoch))
+            return store_wt
 
     def train_model(self):
         temp_min = 0.5
@@ -388,7 +384,8 @@ class Trainer(object):
         self.model.eval()
         sample = iter(self.test).next().to(self.device)
         self.sample_frames(0 + 1, sample)
-        self.recon_frame(0 + 1, sample)
+        store_wt = self.recon_frame(0 + 1, sample)
+        print(store_wt)
         self.model.train()
         temp = FLAGS.temperature
         for epoch in range(self.start_epoch, self.epochs):
@@ -398,7 +395,7 @@ class Trainer(object):
             for i, data in enumerate(self.train):
                 data = data.to(self.device)
                 self.optimizer.zero_grad()
-                zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, z, recon_x = self.model(data, temp)
+                zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, z, recon_x, _ = self.model(data, temp)
                 loss, kl = loss_fn(self.model.dataset, data, recon_x, zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar)
                 write_log('mse loss is %f, kl loss is %f'%(loss, kl), self.log_path)
                 print('index is %d, mse loss is %f, kl loss is %f'%(i, loss, kl))
@@ -418,7 +415,8 @@ class Trainer(object):
             self.model.eval()
             sample = iter(self.test).next().to(self.device)
             self.sample_frames(epoch + 1, sample)
-            self.recon_frame(epoch + 1, sample)
+            store_wt = self.recon_frame(epoch + 1, sample)
+            write_log(store_wt, self.log_path)
             self.model.train()
         print("Training is complete")
 
@@ -438,7 +436,7 @@ if __name__ == '__main__':
     parser.add_argument('--block_size', type=int, default=3) # 3  4
     # data size
     parser.add_argument('--batch-size', type=int, default=32)
-    parser.add_argument('--frame-size', type=int, default=8)
+    parser.add_argument('--frame-size', type=int, default=20)
     parser.add_argument('--nsamples', type=int, default=2)
 
     # optimization

@@ -196,7 +196,7 @@ class Trainer(object):
 
             len = sample.shape[0]
             #len = self.samples
-            x = self.model.enc_obs(sample.view(-1, *sample.size()[2:])).view(1, 8, -1)
+            x = self.model.enc_obs(sample.view(-1, *sample.size()[2:])).view(1, sample.shape[1], -1)
             #lstm_out, _ = self.model.z_lstm(x)
             #lstm_out, _ = self.model.z_rnn(lstm_out)
             z_fwd1, z_c1 = self.model.z_lstm.init_hidden(len)
@@ -217,7 +217,7 @@ class Trainer(object):
             z_fwd = zt_1.new_zeros(len, self.model.hidden_dim)
             zt_dec.append(zt_1)
 
-            for t in range(1, 8):
+            for t in range(1, x.shape[1]):
 
                 # prior over ct of each block, ct_i~p(ct_i|zt-1_i)
                 z_fwd = self.model.z_to_z_fwd(zt_1, z_fwd)
@@ -232,14 +232,14 @@ class Trainer(object):
 
             zt_dec = torch.stack(zt_dec, dim=1)
             recon_x = self.model.dec_obs(zt_dec.view(len*self.model.frames,-1)).view(len, self.model.frames,-1)
-            recon_x = recon_x.view(len*8, self.channel, 64, 64)
+            recon_x = recon_x.view(len*x.shape[1], self.channel, 64, 64)
             torchvision.utils.save_image(recon_x, '%s/epoch%d.png' % (self.sample_path, epoch))
 
     def recon_frame(self, epoch, original):
         with torch.no_grad():
             _, _, _, _, _, _,_, recon = self.model(original)
             image = torch.cat((original, recon), dim=0)
-            image = image.view(16, self.channel, 64, 64)
+            image = image.view(2*original.shape[1], self.channel, 64, 64)
             torchvision.utils.save_image(image, '%s/epoch%d.png' % (self.recon_path, epoch))
 
     def train_model(self):
@@ -294,7 +294,7 @@ if __name__ == '__main__':
     parser.add_argument('--conv-dim', type=int, default=256)  # 256 512
     # data size
     parser.add_argument('--batch-size', type=int, default=32)
-    parser.add_argument('--frame-size', type=int, default=8)
+    parser.add_argument('--frame-size', type=int, default=20)
     parser.add_argument('--nsamples', type=int, default=2)
 
     # optimization

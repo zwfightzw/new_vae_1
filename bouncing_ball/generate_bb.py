@@ -29,4 +29,5 @@ for i in range(batch_size):
         cv2.imwrite('tmp_%d.jpg'%(j),dat[i][j]*255)
         img = cv2.imread('tmp.jpg')
 
+
 '''
