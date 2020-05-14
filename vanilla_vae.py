@@ -39,8 +39,7 @@ class FullQDisentangledVAE(nn.Module):
         self.device = device
         self.dataset = dataset
 
-        #self.z_lstm = nn.LSTM(self.conv_dim, self.hidden_dim, 1, batch_first=True)
-        self.z_lstm = LSTMCell(input_size=self.conv_dim, hidden_size=self.hidden_dim).to(device)
+        self.z_lstm = nn.LSTM(self.conv_dim, self.hidden_dim, 1, batch_first=True)
         self.z_post_out = nn.Linear(self.hidden_dim, self.z_dim * 2)
 
         self.z_prior_out = nn.Linear(self.hidden_dim, self.z_dim * 2)
