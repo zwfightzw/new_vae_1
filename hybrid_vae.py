@@ -148,7 +148,7 @@ class FullQDisentangledVAE(nn.Module):
                     zt_1_tmp = concat(post_z_1[:, (fwd_t - 1) * each_block_size: (fwd_t + 1) * each_block_size],
                                       torch.zeros(batch_size, (self.block_size - 2) * each_block_size).to(self.device))
 
-                z_fwd_list[fwd_t] = self.z_to_c_fwd_list[fwd_t](zt_1_tmp, z_fwd_list[fwd_t],w=wt[:,fwd_t].view(-1,1))
+                z_fwd_list[fwd_t] = self.z_to_c_fwd_list[fwd_t](post_z_1, z_fwd_list[fwd_t],w=wt[:,fwd_t].view(-1,1))
 
             z_fwd_all = torch.stack(z_fwd_list, dim=2).view(batch_size, self.hidden_dim)  #.mean(dim=2)
             # p(xt|zt)
@@ -311,7 +311,7 @@ class Trainer(object):
                         zt_1_tmp = concat(zt_1[:, (fwd_t - 1) * each_block_size: (fwd_t + 1) * each_block_size],
                                           torch.zeros(len, (self.model.block_size-2)*each_block_size).to(self.device))
 
-                    z_fwd_list[fwd_t] = self.model.z_to_c_fwd_list[fwd_t](zt_1_tmp, z_fwd_list[fwd_t],
+                    z_fwd_list[fwd_t] = self.model.z_to_c_fwd_list[fwd_t](zt_1, z_fwd_list[fwd_t],
                                                                     w=wt[:, fwd_t].view(-1, 1))
 
 
