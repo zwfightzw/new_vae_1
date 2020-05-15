@@ -129,6 +129,7 @@ class FullQDisentangledVAE(nn.Module):
 
         zt_obs_list.append(post_z_1)
         '''
+        store_wt = []
         wt = torch.ones(batch_size, self.block_size).to(self.device)
         wt1 = torch.ones(batch_size, self.block_size).to(self.device)
         z_fwd_list = [torch.zeros(batch_size, self.z_dim // self.block_size).to(self.device) for i in
@@ -166,6 +167,8 @@ class FullQDisentangledVAE(nn.Module):
             wt = self.z_w_function(z_fwd_all)
             wt = cumsoftmax(wt)
 
+            store_wt.append(wt[0].detach().cpu().numpy())
+
             wt1 = self.z_w1_function(z_fwd_all)
             wt1 = cumsoftmax(wt1)
 
@@ -197,16 +200,16 @@ class FullQDisentangledVAE(nn.Module):
         z_prior_mean_list = torch.stack(z_prior_mean_list, dim=1)
         z_prior_lar_list = torch.stack(z_prior_lar_list, dim=1)
 
-        return zt_1_mean, zt_1_lar, z_post_mean_list, z_post_lar_list, z_prior_mean_list, z_prior_lar_list, zt_obs_list
+        return zt_1_mean, zt_1_lar, z_post_mean_list, z_post_lar_list, z_prior_mean_list, z_prior_lar_list, zt_obs_list, store_wt
 
     def forward(self, x, temp):
         num_samples = x.shape[0]
         seq_len = x.shape[1]
         conv_x = self.enc_obs(x.view(-1, *x.size()[2:])).view(num_samples, seq_len, -1)
-        zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, z = self.encode_z(conv_x)
+        zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, z, store_wt = self.encode_z(conv_x)
         #z = gumbel_softmax(z, temp, self.z_dim)
         recon_x = self.dec_obs(z.view(num_samples * seq_len, -1)).view(num_samples, seq_len, *x.size()[2:])
-        return zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, z, recon_x
+        return zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, z, recon_x, store_wt
 
 def cumsoftmax(x, temp=0.5, dim=-1):
     x = x + sample_gumbel(x.size())
@@ -370,11 +373,12 @@ class Trainer(object):
 
     def recon_frame(self, epoch, original):
         with torch.no_grad():
-            _, _, _, _, _, _,_, recon = self.model(original, 1.0)
+            _, _, _, _, _, _,_, recon, store_wt = self.model(original, 1.0)
             image = torch.cat((original, recon), dim=0)
             print(image.shape)
             image = image.view(2*original.shape[1], channel, 64, 64)
             torchvision.utils.save_image(image, '%s/epoch%d.png' % (self.recon_path, epoch))
+            return store_wt
 
     def train_model(self):
         temp_min = 0.5
@@ -382,8 +386,10 @@ class Trainer(object):
         self.model.eval()
         sample = iter(self.test).next().to(self.device)
         store_wt = self.sample_frames(0 + 1, sample)
-        self.recon_frame(0 + 1, sample)
-        print(store_wt)
+        store_wt1 = self.recon_frame(0 + 1, sample)
+        write_log(store_wt, self.log_path)
+        write_log('************************', self.log_path)
+        write_log(store_wt1, self.log_path)
         self.model.train()
         temp = FLAGS.temperature
         for epoch in range(self.start_epoch, self.epochs):
@@ -393,7 +399,7 @@ class Trainer(object):
             for i, data in enumerate(self.train):
                 data = data.to(self.device)
                 self.optimizer.zero_grad()
-                zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, z, recon_x = self.model(data, temp)
+                zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, z, recon_x,_ = self.model(data, temp)
                 loss, kl = loss_fn(self.model.dataset, data, recon_x, zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar)
                 write_log('mse loss is %f, kl loss is %f'%(loss, kl), self.log_path)
                 print('index is %d, mse loss is %f, kl loss is %f'%(i, loss, kl))
@@ -413,8 +419,10 @@ class Trainer(object):
             self.model.eval()
             sample = iter(self.test).next().to(self.device)
             store_wt = self.sample_frames(epoch + 1, sample)
-            self.recon_frame(epoch + 1, sample)
+            store_wt1 = self.recon_frame(epoch + 1, sample)
             write_log(store_wt, self.log_path)
+            write_log('************************', self.log_path)
+            write_log(store_wt1, self.log_path)
             self.model.train()
         print("Training is complete")
 
