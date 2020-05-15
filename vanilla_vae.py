@@ -117,7 +117,7 @@ class FullQDisentangledVAE(nn.Module):
 
                 z_fwd_list[fwd_t] = self.z_to_c_fwd_list[fwd_t](zt_1_tmp, z_fwd_list[fwd_t])#,w1=wt1[:,fwd_t].view(-1,1))
 
-            z_fwd_all = torch.stack(z_fwd_list, dim=2).view(batch_size, self.z_dim)  # .mean(dim=2)
+            z_fwd_all = torch.stack(z_fwd_list, dim=2).view(batch_size, self.hidden_dim)  # .mean(dim=2)
             # prior over ct of each block, ct_i~p(ct_i|zt-1_i)
             #z_fwd = self.z_to_z_fwd(z_post_sample, z_fwd)
 

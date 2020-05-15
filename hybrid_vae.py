@@ -163,7 +163,7 @@ class FullQDisentangledVAE(nn.Module):
             # update weight, w0<...<wd<=1, d means block_size
             #wt = self.z_w_function(concat(z_fwd_all,z_post_sample))
             wt = self.z_w_function(z_fwd_all)
-            wt = cumsoftmax(wt)
+            wt = cumsoftmax(wt, self.temperature)
 
             store_wt.append(wt[0].detach().cpu().numpy())
 
@@ -354,7 +354,7 @@ class Trainer(object):
 
                 #wt = self.model.z_w_function(concat(z_fwd_all, zt))
                 wt = self.model.z_w_function(z_fwd_all)
-                wt = cumsoftmax(wt)
+                wt = cumsoftmax(wt, self.model.temperature)
 
                 store_wt.append(wt[0].detach().cpu().numpy())
                 # decode observation
