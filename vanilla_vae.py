@@ -43,8 +43,8 @@ class FullQDisentangledVAE(nn.Module):
         self.dataset = dataset
         self.block_size = block_size
 
-        #self.z_lstm = nn.LSTM(self.hidden_dim, self.hidden_dim, 1, batch_first=True)
-        self.z_lstm = nn.LSTM(self.hidden_dim, self.hidden_dim // 2, 1, bidirectional=True, batch_first=True)
+        self.z_lstm = nn.LSTM(self.hidden_dim, self.hidden_dim, 1, batch_first=True)
+        #self.z_lstm = nn.LSTM(self.hidden_dim, self.hidden_dim // 2, 1, bidirectional=True, batch_first=True)
         self.z_post_out = nn.Linear(self.hidden_dim, self.z_dim * 2)
 
         self.z_prior_out = nn.Linear(self.z_dim, self.z_dim * 2)
@@ -326,8 +326,8 @@ if __name__ == '__main__':
     # dataset
     parser.add_argument('--dset_name', type=str, default='bouncing_balls')  #moving_mnist, lpc, bouncing_balls
     # state size
-    parser.add_argument('--z-dim', type=int, default=72)  # 72 144
-    parser.add_argument('--hidden-dim', type=int, default=128) #  216 252
+    parser.add_argument('--z-dim', type=int, default=144)  # 72 144
+    parser.add_argument('--hidden-dim', type=int, default=256) #  216 252
     parser.add_argument('--conv-dim', type=int, default=256)  # 256 512
     parser.add_argument('--block_size', type=int, default=3) # 3  4
     # data size
