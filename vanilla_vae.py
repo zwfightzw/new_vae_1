@@ -42,9 +42,9 @@ class FullQDisentangledVAE(nn.Module):
         self.z_lstm = nn.LSTM(self.conv_dim, self.hidden_dim, 1, batch_first=True)
         self.z_post_out = nn.Linear(self.hidden_dim, self.z_dim * 2)
 
-        self.z_prior_out = nn.Linear(self.hidden_dim, self.z_dim * 2)
+        self.z_prior_out = nn.Linear(self.z_dim, self.z_dim * 2)
 
-        self.z_to_z_fwd = GRUCell(input_size=self.z_dim, hidden_size=self.hidden_dim).to(device)
+        self.z_to_z_fwd = GRUCell(input_size=self.z_dim, hidden_size=self.z_dim).to(device)
 
         # observation encoder / decoder
         self.enc_obs = Encoder(feat_size=self.hidden_dim, output_size=self.conv_dim, channel=channel)
@@ -79,7 +79,7 @@ class FullQDisentangledVAE(nn.Module):
         post_z_1 = self.reparameterize(zt_1_mean, zt_1_lar, self.training)
 
         #zt_1 = torch.zeros(batch_size, self.z_dim).to(device)
-        z_fwd = post_z_1.new_zeros(batch_size, self.hidden_dim)
+        z_fwd = post_z_1.new_zeros(batch_size, self.z_dim)
         #zt_obs_list.append(post_z_1)
 
         for t in range(0, seq_size):
@@ -204,7 +204,7 @@ class Trainer(object):
             #zt_1 = [Normal(torch.zeros(self.model.z_dim).to(self.device), torch.ones(self.model.z_dim).to(self.device)).rsample() for i in range(len)]
             #zt_1 = torch.stack(zt_1, dim=0)
 
-            z_fwd = zt_1.new_zeros(len, self.model.hidden_dim)
+            z_fwd = zt_1.new_zeros(len, self.model.z_dim)
             #zt_dec.append(zt_1)
 
             for t in range(0, x.shape[1]):
