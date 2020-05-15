@@ -328,7 +328,7 @@ class Trainer(object):
                         zt_1_tmp = concat(zt_1[:, (fwd_t - 1) * each_block_size: (fwd_t + 1) * each_block_size],
                                           torch.zeros(len, (self.model.block_size-2)*each_block_size).to(self.device))
 
-                    z_fwd_list[fwd_t] = self.model.z_to_c_fwd_list[fwd_t](zt_1, z_fwd_list[fwd_t],
+                    z_fwd_list[fwd_t] = self.model.z_to_c_fwd_list[fwd_t](zt_1_tmp, z_fwd_list[fwd_t],
                                                                     w=wt[:, fwd_t].view(-1, 1))#, w1=wt1[:, fwd_t].view(-1, 1))
 
 
