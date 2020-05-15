@@ -26,7 +26,7 @@ class GRUCell(nn.Module):
         for w in self.parameters():
             w.data.uniform_(-std, std)
 
-    def forward(self, x, hidden, w=None):
+    def forward(self, x, hidden, w=None, w1=None):
         x = x.view(-1, x.size(1))
 
         gate_x = self.x2h(x)
@@ -43,7 +43,10 @@ class GRUCell(nn.Module):
             inputgate = F.sigmoid(i_i + h_i)
         else:
             inputgate = 1 - (1-F.sigmoid(i_i + h_i)) * w
-        newgate = F.tanh(i_n + (resetgate * h_n))
+        if w1 is None:
+            newgate = F.tanh(i_n + (resetgate * h_n))
+        else:
+            newgate = F.tanh(i_n + (resetgate * h_n)) * w1
 
         hy = newgate + inputgate * (hidden - newgate)
 
