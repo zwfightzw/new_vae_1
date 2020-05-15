@@ -80,9 +80,9 @@ class FullQDisentangledVAE(nn.Module):
 
         #zt_1 = torch.zeros(batch_size, self.z_dim).to(device)
         z_fwd = post_z_1.new_zeros(batch_size, self.hidden_dim)
-        zt_obs_list.append(post_z_1)
+        #zt_obs_list.append(post_z_1)
 
-        for t in range(1, seq_size):
+        for t in range(0, seq_size):
             # posterior over ct, q(ct|ot,ft)
             z_post_out = self.z_post_out(lstm_out[:, t])
             zt_post_mean = z_post_out[:, :self.z_dim]
@@ -93,7 +93,7 @@ class FullQDisentangledVAE(nn.Module):
             z_post_sample = self.reparameterize(zt_post_mean, zt_post_lar, self.training)
 
             # prior over ct of each block, ct_i~p(ct_i|zt-1_i)
-            z_fwd = self.z_to_z_fwd(post_z_1, z_fwd)
+            z_fwd = self.z_to_z_fwd(z_post_sample, z_fwd)
 
             # p(xt|zt)
             zt_obs_list.append(z_post_sample)
@@ -205,9 +205,9 @@ class Trainer(object):
             #zt_1 = torch.stack(zt_1, dim=0)
 
             z_fwd = zt_1.new_zeros(len, self.model.hidden_dim)
-            zt_dec.append(zt_1)
+            #zt_dec.append(zt_1)
 
-            for t in range(1, x.shape[1]):
+            for t in range(0, x.shape[1]):
 
                 # prior over ct of each block, ct_i~p(ct_i|zt-1_i)
                 z_fwd = self.model.z_to_z_fwd(zt_1, z_fwd)
