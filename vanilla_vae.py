@@ -47,10 +47,10 @@ class FullQDisentangledVAE(nn.Module):
         #self.z_lstm = nn.LSTM(self.hidden_dim, self.hidden_dim // 2, 1, bidirectional=True, batch_first=True)
         self.z_post_out = nn.Linear(self.hidden_dim, self.z_dim * 2)
 
-        self.z_prior_out = nn.Linear(self.z_dim, self.z_dim * 2)
+        self.z_prior_out = nn.Linear(self.hidden_dim, self.z_dim * 2)
 
         self.z_to_c_fwd_list = [
-            GRUCell(input_size=self.z_dim, hidden_size=self.z_dim // self.block_size).to(self.device)
+            GRUCell(input_size=self.z_dim, hidden_size=self.hidden_dim // self.block_size).to(self.device)
             for i in range(self.block_size)]
 
         # observation encoder / decoder
@@ -88,7 +88,7 @@ class FullQDisentangledVAE(nn.Module):
 
         #zt_1 = torch.zeros(batch_size, self.z_dim).to(device)
         #z_fwd = post_z_1.new_zeros(batch_size, self.z_dim)
-        z_fwd_list = [torch.zeros(batch_size, self.z_dim // self.block_size).to(self.device) for i in
+        z_fwd_list = [torch.zeros(batch_size, self.hidden_dim // self.block_size).to(self.device) for i in
                       range(self.block_size)]
         #zt_obs_list.append(post_z_1)
 
@@ -231,7 +231,7 @@ class Trainer(object):
             #zt_1 = torch.stack(zt_1, dim=0)
 
             #z_fwd = zt_1.new_zeros(len, self.model.z_dim)
-            z_fwd_list = [torch.zeros(len, self.model.z_dim // self.model.block_size).to(self.device) for i in
+            z_fwd_list = [torch.zeros(len, self.model.hidden_dim // self.model.block_size).to(self.device) for i in
                           range(self.model.block_size)]
             #zt_dec.append(zt_1)
 
@@ -257,7 +257,7 @@ class Trainer(object):
 
                 # prior over ct of each block, ct_i~p(ct_i|zt-1_i)
                 #z_fwd = self.model.z_to_z_fwd(zt_1, z_fwd)
-                z_fwd_all = torch.stack(z_fwd_list, dim=2).view(len, self.model.z_dim)  # .mean(dim=2)
+                z_fwd_all = torch.stack(z_fwd_list, dim=2).view(len, self.model.hidden_dim)  # .mean(dim=2)
                 z_prior_fwd = self.model.z_prior_out(z_fwd_all)
 
                 z_fwd_latent_mean = z_prior_fwd[:, :self.model.z_dim]
@@ -326,8 +326,8 @@ if __name__ == '__main__':
     # dataset
     parser.add_argument('--dset_name', type=str, default='bouncing_balls')  #moving_mnist, lpc, bouncing_balls
     # state size
-    parser.add_argument('--z-dim', type=int, default=144)  # 72 144
-    parser.add_argument('--hidden-dim', type=int, default=256) #  216 252
+    parser.add_argument('--z-dim', type=int, default=72)  # 72 144
+    parser.add_argument('--hidden-dim', type=int, default=252) #  216 252
     parser.add_argument('--conv-dim', type=int, default=256)  # 256 512
     parser.add_argument('--block_size', type=int, default=3) # 3  4
     # data size
