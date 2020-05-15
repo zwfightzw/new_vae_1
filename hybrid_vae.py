@@ -211,8 +211,6 @@ def cumsoftmax(x, temp=0.4, dim=-1):
     x = torch.exp(x)
     x = x / torch.sum(x)
     x = torch.cumsum(x, dim=dim)
-    print('********************')
-    print(x)
     return x
 
 def loss_fn(dataset, original_seq, recon_seq, zt_1_mean, zt_1_lar,z_post_mean, z_post_logvar, z_prior_mean, z_prior_logvar):
