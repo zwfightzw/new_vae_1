@@ -111,10 +111,11 @@ class FullQDisentangledVAE(nn.Module):
         z_prior_mean_list = []
         z_prior_lar_list = []
         zt_obs_list = []
+
         zt_1_post = self.z_post_out(lstm_out[:, 0])
         zt_1_mean = zt_1_post[:, :self.z_dim]
         zt_1_lar = zt_1_post[:, self.z_dim:]
-
+        '''
         post_z_1 = self.reparameterize(zt_1_mean, zt_1_lar, self.training)
         # init wt
         wt = torch.ones(batch_size, self.block_size).to(self.device)
@@ -126,7 +127,11 @@ class FullQDisentangledVAE(nn.Module):
         store_wt.append(wt[0].detach().cpu().numpy())
 
         zt_obs_list.append(post_z_1)
-        for t in range(1, seq_size):
+        '''
+        wt = torch.ones(batch_size, self.block_size).to(self.device)
+        z_fwd_list = [torch.zeros(batch_size, self.hidden_dim // self.block_size).to(self.device) for i in
+                      range(self.block_size)]
+        for t in range(0, seq_size):
 
             z_post_out = self.z_post_out(lstm_out[:, t])
             zt_post_mean = z_post_out[:, :self.z_dim]
@@ -139,16 +144,16 @@ class FullQDisentangledVAE(nn.Module):
             for fwd_t in range(self.block_size):
                 # prior over ct of each block, ct_i~p(ct_i|zt-1_i)
                 if fwd_t == 0:
-                    zt_1_tmp = concat(post_z_1[:, 0 * each_block_size:1 * each_block_size],
+                    zt_1_tmp = concat(z_post_sample[:, 0 * each_block_size:1 * each_block_size],
                                       torch.zeros(batch_size, (self.block_size - 1) * each_block_size).to(self.device))
                 elif fwd_t == (self.block_size - 1):
                     zt_1_tmp = concat(torch.zeros(batch_size, (self.block_size - 2) * each_block_size).to(self.device),
-                                      post_z_1[:, (fwd_t - 1) * each_block_size:(fwd_t + 1) * each_block_size])
+                                      z_post_sample[:, (fwd_t - 1) * each_block_size:(fwd_t + 1) * each_block_size])
                 else:
-                    zt_1_tmp = concat(post_z_1[:, (fwd_t - 1) * each_block_size: (fwd_t + 1) * each_block_size],
+                    zt_1_tmp = concat(z_post_sample[:, (fwd_t - 1) * each_block_size: (fwd_t + 1) * each_block_size],
                                       torch.zeros(batch_size, (self.block_size - 2) * each_block_size).to(self.device))
 
-                z_fwd_list[fwd_t] = self.z_to_c_fwd_list[fwd_t](post_z_1, z_fwd_list[fwd_t],w=wt[:,fwd_t].view(-1,1))
+                z_fwd_list[fwd_t] = self.z_to_c_fwd_list[fwd_t](z_post_sample, z_fwd_list[fwd_t],w=wt[:,fwd_t].view(-1,1))
 
             z_fwd_all = torch.stack(z_fwd_list, dim=2).view(batch_size, self.hidden_dim)  #.mean(dim=2)
             # p(xt|zt)
@@ -284,21 +289,23 @@ class Trainer(object):
             zt_1_mean = zt_1_post[:, :self.model.z_dim]
             zt_1_lar = zt_1_post[:, self.model.z_dim:]
 
+            
             zt_1 = self.model.reparameterize(zt_1_mean, zt_1_lar, self.model.training)
             #zt_1 = [Normal(torch.zeros(self.model.z_dim).to(self.device), torch.ones(self.model.z_dim).to(self.device)).rsample() for i in range(len)]
             #zt_1 = torch.stack(zt_1, dim=0)
 
             # init wt
             wt = torch.ones(len, self.model.block_size).to(self.device)
-
-            store_wt = []
+            '''
+            
             store_wt.append(wt[0].detach().cpu().numpy())
-
+            '''
+            store_wt = []
             z_fwd_list = [torch.zeros(len, self.model.hidden_dim//self.model.block_size).to(self.device) for i in range(self.model.block_size)]
             #z_fwd_all = torch.stack(z_fwd_list, dim=2).view(len, self.model.hidden_dim)
             #zt_obs = concat(z_fwd_all, zt_1)
-            zt_dec.append(zt_1)
-            for t in range(1, self.model.frames):
+            #zt_dec.append(zt_1)
+            for t in range(0, self.model.frames):
                 for fwd_t in range(self.model.block_size):
                     # prior over ct of each block, ct_i~p(ct_i|zt-1_i)
                     if fwd_t == 0:
@@ -342,9 +349,7 @@ class Trainer(object):
                 #wt = self.model.z_w_function(concat(z_fwd_all, zt))
                 wt = self.model.z_w_function(z_fwd_all)
                 wt = cumsoftmax(wt)
-
                 store_wt.append(wt[0].detach().cpu().numpy())
-
                 # decode observation
                 zt_1 = zt
 
