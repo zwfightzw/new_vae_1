@@ -201,7 +201,7 @@ class Trainer(object):
             zt_dec = []
             len = sample.shape[0]
             # len = self.samples
-            x = self.model.enc_obs(sample.view(-1, *sample.size()[2:])).view(1, 8, -1)
+            x = self.model.enc_obs(sample.view(-1, *sample.size()[2:])).view(1, sample.shape[1], -1)
             lstm_out, _ = self.model.z_lstm(x)
 
             zt_1_post = self.model.z_post_out(lstm_out[:, 0])
@@ -231,7 +231,7 @@ class Trainer(object):
 
             zt_dec = torch.stack(zt_dec, dim=1)
             recon_x = self.model.dec_obs(zt_dec.view(len * self.model.frames, -1)).view(len, self.model.frames, -1)
-            recon_x = recon_x.view(len * 8, self.channel, 64, 64)
+            recon_x = recon_x.view(len * x.shape[1], self.channel, 64, 64)
             torchvision.utils.save_image(recon_x, '%s/epoch%d.png' % (self.sample_path, epoch))
 
     def recon_frame(self, epoch, original):
@@ -239,7 +239,7 @@ class Trainer(object):
             _, _, _, _, _, _, _, recon = self.model(original)
             image = torch.cat((original, recon), dim=0)
             print(image.shape)
-            image = image.view(16, channel, 64, 64)
+            image = image.view(2*original.shape[1], channel, 64, 64)
             torchvision.utils.save_image(image, '%s/epoch%d.png' % (self.recon_path, epoch))
 
     def train_model(self):
@@ -286,7 +286,7 @@ if __name__ == '__main__':
     # method
     parser.add_argument('--method', type=str, default='Hybrid_wt')
     # dataset
-    parser.add_argument('--dset_name', type=str, default='moving_mnist')  # moving_mnist, lpc, bouncing_balls
+    parser.add_argument('--dset_name', type=str, default='bouncing_balls')  # moving_mnist, lpc, bouncing_balls
     # state size
     parser.add_argument('--z-dim', type=int, default=36)  # 72 144
     parser.add_argument('--hidden-dim', type=int, default=216)  # 216 252
