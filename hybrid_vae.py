@@ -140,6 +140,7 @@ class FullQDisentangledVAE(nn.Module):
 
             for fwd_t in range(self.block_size):
                 # prior over ct of each block, ct_i~p(ct_i|zt-1_i)
+                '''
                 if fwd_t == 0:
                     zt_1_tmp = concat(z_post_sample[:, 0 * each_block_size:1 * each_block_size],
                                       torch.zeros(batch_size, (self.block_size - 1) * each_block_size).to(self.device))
@@ -149,6 +150,17 @@ class FullQDisentangledVAE(nn.Module):
                 else:
                     zt_1_tmp = concat(z_post_sample[:, (fwd_t - 1) * each_block_size: (fwd_t + 1) * each_block_size],
                                       torch.zeros(batch_size, (self.block_size - 2) * each_block_size).to(self.device))
+                '''
+                if fwd_t == 0:
+                    zt_1_tmp = concat(z_post_sample[:, 0 * each_block_size:1 * each_block_size],
+                                      torch.zeros(batch_size, (self.block_size - 1) * each_block_size).to(self.device))
+                elif fwd_t == (self.block_size - 1):
+                    zt_1_tmp = concat(torch.zeros(batch_size, (self.block_size - 1) * each_block_size).to(self.device),
+                                      z_post_sample[:, fwd_t * each_block_size:(fwd_t + 1) * each_block_size])
+                else:
+                    zt_1_tmp = concat(torch.zeros(batch_size, fwd_t * each_block_size).to(self.device),
+                                      z_post_sample[:, fwd_t * each_block_size: (fwd_t + 1) * each_block_size],
+                                      torch.zeros(batch_size, (self.block_size -1-fwd_t) * each_block_size).to(self.device))
 
                 z_fwd_list[fwd_t] = self.z_to_c_fwd_list[fwd_t](zt_1_tmp, z_fwd_list[fwd_t],w=wt[:,fwd_t].view(-1,1))#,w1=wt1[:,fwd_t].view(-1,1))
 
@@ -314,6 +326,7 @@ class Trainer(object):
             for t in range(0, self.model.frames):
                 for fwd_t in range(self.model.block_size):
                     # prior over ct of each block, ct_i~p(ct_i|zt-1_i)
+                    '''
                     if fwd_t == 0:
                         zt_1_tmp = concat(zt_1[:, 0 * each_block_size:1 * each_block_size],
                                           torch.zeros(len, (self.model.block_size-1) * each_block_size).to(self.device))
@@ -323,6 +336,17 @@ class Trainer(object):
                     else:
                         zt_1_tmp = concat(zt_1[:, (fwd_t - 1) * each_block_size: (fwd_t + 1) * each_block_size],
                                           torch.zeros(len, (self.model.block_size-2)*each_block_size).to(self.device))
+                    '''
+                    if fwd_t == 0:
+                        zt_1_tmp = concat(zt_1[:, 0 * each_block_size:1 * each_block_size],
+                                          torch.zeros(len, (self.model.block_size - 1) * each_block_size).to(self.device))
+                    elif fwd_t == (self.model.block_size - 1):
+                        zt_1_tmp = concat(torch.zeros(len, (self.model.block_size - 1) * each_block_size).to(self.device),
+                            zt_1[:, fwd_t * each_block_size:(fwd_t + 1) * each_block_size])
+                    else:
+                        zt_1_tmp = concat(torch.zeros(len, fwd_t * each_block_size).to(self.device),
+                                          zt_1[:, fwd_t * each_block_size: (fwd_t + 1) * each_block_size],
+                                          torch.zeros(len, (self.model.block_size - 1 - fwd_t) * each_block_size).to(self.device))
 
                     z_fwd_list[fwd_t] = self.model.z_to_c_fwd_list[fwd_t](zt_1_tmp, z_fwd_list[fwd_t],
                                                                     w=wt[:, fwd_t].view(-1, 1))#, w1=wt1[:, fwd_t].view(-1, 1))
