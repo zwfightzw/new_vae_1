@@ -90,9 +90,9 @@ class FullQDisentangledVAE(nn.Module):
         #z_fwd = post_z_1.new_zeros(batch_size, self.z_dim)
         z_fwd_list = [torch.zeros(batch_size, self.hidden_dim // self.block_size).to(self.device) for i in
                       range(self.block_size)]
-        #zt_obs_list.append(post_z_1)
+        zt_obs_list.append(post_z_1)
 
-        for t in range(0, seq_size):
+        for t in range(1, seq_size):
             # posterior over ct, q(ct|ot,ft)
             z_post_out = self.z_post_out(lstm_out[:, t])
             zt_post_mean = z_post_out[:, :self.z_dim]
@@ -106,13 +106,13 @@ class FullQDisentangledVAE(nn.Module):
             for fwd_t in range(self.block_size):
                 # prior over ct of each block, ct_i~p(ct_i|zt-1_i)
                 if fwd_t == 0:
-                    zt_1_tmp = concat(z_post_sample[:, 0 * each_block_size:1 * each_block_size],
+                    zt_1_tmp = concat(post_z_1[:, 0 * each_block_size:1 * each_block_size],
                                       torch.zeros(batch_size, (self.block_size - 1) * each_block_size).to(self.device))
                 elif fwd_t == (self.block_size - 1):
                     zt_1_tmp = concat(torch.zeros(batch_size, (self.block_size - 2) * each_block_size).to(self.device),
-                                      z_post_sample[:, (fwd_t - 1) * each_block_size:(fwd_t + 1) * each_block_size])
+                                      post_z_1[:, (fwd_t - 1) * each_block_size:(fwd_t + 1) * each_block_size])
                 else:
-                    zt_1_tmp = concat(z_post_sample[:, (fwd_t - 1) * each_block_size: (fwd_t + 1) * each_block_size],
+                    zt_1_tmp = concat(post_z_1[:, (fwd_t - 1) * each_block_size: (fwd_t + 1) * each_block_size],
                                       torch.zeros(batch_size, (self.block_size - 2) * each_block_size).to(self.device))
 
                 z_fwd_list[fwd_t] = self.z_to_c_fwd_list[fwd_t](zt_1_tmp, z_fwd_list[fwd_t])#,w1=wt1[:,fwd_t].view(-1,1))
@@ -233,9 +233,9 @@ class Trainer(object):
             #z_fwd = zt_1.new_zeros(len, self.model.z_dim)
             z_fwd_list = [torch.zeros(len, self.model.hidden_dim // self.model.block_size).to(self.device) for i in
                           range(self.model.block_size)]
-            #zt_dec.append(zt_1)
+            zt_dec.append(zt_1)
 
-            for t in range(0, x.shape[1]):
+            for t in range(1, x.shape[1]):
 
                 for fwd_t in range(self.model.block_size):
                     # prior over ct of each block, ct_i~p(ct_i|zt-1_i)
