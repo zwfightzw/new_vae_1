@@ -166,7 +166,7 @@ class FullQDisentangledVAE(nn.Module):
                                       z_post_sample[:, fwd_t * each_block_size: (fwd_t + 1) * each_block_size],
                                       torch.zeros(batch_size, (self.block_size -1-fwd_t) * each_block_size).to(self.device))
                 '''
-                z_fwd_list[fwd_t] = self.z_to_c_fwd_list[fwd_t](zt_1_tmp, z_fwd_list[fwd_t],w=wt[:,fwd_t].view(-1,1),w1=wt1[:,fwd_t].view(-1,1))
+                z_fwd_list[fwd_t] = self.z_to_c_fwd_list[fwd_t](zt_1_tmp, z_fwd_list[fwd_t],w=wt[:,fwd_t].view(-1,1))#,w1=wt1[:,fwd_t].view(-1,1))
 
             z_fwd_all = torch.stack(z_fwd_list, dim=2).view(batch_size, self.hidden_dim)  #.mean(dim=2)
             # p(xt|zt)
@@ -222,7 +222,7 @@ class FullQDisentangledVAE(nn.Module):
         # x = torch.log(x)/temp
         # x = torch.exp(x)
         # x = x / torch.sum(x)
-        x = torch.cumsum(x, dim=dim)
+        # x = torch.cumsum(x, dim=dim)
         return x
 
     def forward(self, x, temp):
@@ -356,7 +356,7 @@ class Trainer(object):
                                           torch.zeros(len, (self.model.block_size - 1 - fwd_t) * each_block_size).to(self.device))
                     '''
                     z_fwd_list[fwd_t] = self.model.z_to_c_fwd_list[fwd_t](zt_1_tmp, z_fwd_list[fwd_t],
-                                                                    w=wt[:, fwd_t].view(-1, 1), w1=wt1[:, fwd_t].view(-1, 1))
+                                                                    w=wt[:, fwd_t].view(-1, 1))#, w1=wt1[:, fwd_t].view(-1, 1))
 
 
                 z_fwd_all = torch.stack(z_fwd_list, dim=2).view(len, self.model.hidden_dim)  #.mean(dim=2)
