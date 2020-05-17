@@ -149,6 +149,7 @@ class FullQDisentangledVAE(nn.Module):
         zt_obs_list.append(post_z_1)
 
         curr_layer = [None] * (seq_size-1)
+        l1_wt = [None] * (seq_size - 1)
 
         for t in range(1, seq_size):
 
@@ -186,6 +187,7 @@ class FullQDisentangledVAE(nn.Module):
                 '''
                 z_fwd_list[fwd_t] = self.z_to_c_fwd_list[fwd_t](zt_1_tmp, z_fwd_list[fwd_t],w=wt[:,fwd_t].view(-1,1))#,w1=wt1[:,fwd_t].view(-1,1))
 
+            l1_wt[t-1] = z_fwd_list[0]
             z_fwd_all = torch.stack(z_fwd_list, dim=2).mean(dim=2).view(batch_size, self.hidden_dim)  #.mean(dim=2)
             curr_layer[t-1] = z_fwd_all
             # p(xt|zt)
@@ -227,7 +229,10 @@ class FullQDisentangledVAE(nn.Module):
 
         raw_outputs = []
         outputs = []
+        l1_wt_out = []
         prev_layer = torch.stack(curr_layer)
+        l1_wt = torch.stack(l1_wt)
+        l1_wt_out.append(l1_wt)
         raw_outputs.append(prev_layer)
         prev_layer = self.lockdrop(prev_layer, self.dropout)
         outputs.append(prev_layer)
@@ -238,7 +243,7 @@ class FullQDisentangledVAE(nn.Module):
         z_prior_mean_list = torch.stack(z_prior_mean_list, dim=1)
         z_prior_lar_list = torch.stack(z_prior_lar_list, dim=1)
 
-        return zt_1_mean, zt_1_lar, z_post_mean_list, z_post_lar_list, z_prior_mean_list, z_prior_lar_list, zt_obs_list, store_wt, store_wt1, raw_outputs, outputs
+        return zt_1_mean, zt_1_lar, z_post_mean_list, z_post_lar_list, z_prior_mean_list, z_prior_lar_list, zt_obs_list, store_wt, store_wt1, raw_outputs, outputs, l1_wt_out
 
     def cumsoftmax(self, x, temp=0.5, dim=-1):
         if self.training:
@@ -254,41 +259,44 @@ class FullQDisentangledVAE(nn.Module):
         num_samples = x.shape[0]
         seq_len = x.shape[1]
         conv_x = self.enc_obs(x.view(-1, *x.size()[2:])).view(num_samples, seq_len, -1)
-        zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, z, store_wt, store_wt1, raw_outputs, outputs  = self.encode_z(conv_x)
+        zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, z, store_wt, store_wt1, raw_outputs, outputs, l1_wt  = self.encode_z(conv_x)
         #z = gumbel_softmax(z, temp, self.z_dim)
         recon_x = self.dec_obs(z.view(num_samples * seq_len, -1)).view(num_samples, seq_len, *x.size()[2:])
-        return zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, z, recon_x, store_wt, store_wt1, raw_outputs, outputs
+        return zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, z, recon_x, store_wt, store_wt1, raw_outputs, outputs, l1_wt
 
-def loss_fn(dataset, original_seq, recon_seq, zt_1_mean, zt_1_lar,z_post_mean, z_post_logvar, z_prior_mean, z_prior_logvar, raw_outputs, outputs, alpha, beta):
+def loss_fn(dataset, original_seq, recon_seq, zt_1_mean, zt_1_lar,z_post_mean, z_post_logvar, z_prior_mean, z_prior_logvar, raw_outputs, outputs, alpha, beta, l1_wt):
 
-    if dataset == 'lpc':
-        obs_cost = F.mse_loss(recon_seq,original_seq)
-    elif dataset == 'moving_mnist' or dataset == 'bouncing_balls':
-        obs_cost = F.binary_cross_entropy(recon_seq, original_seq)  #binary_cross_entropy
+    if dataset == 'lpc' or dataset == 'bouncing_balls':
+        obs_cost = F.mse_loss(recon_seq,original_seq, size_average=False)
+    elif dataset == 'moving_mnist':
+        obs_cost = F.binary_cross_entropy(recon_seq, original_seq, size_average=False)  #binary_cross_entropy
     batch_size = recon_seq.shape[0]
     # compute kl related to states, kl(q(ct|ot,ft)||p(ct|zt-1))
-    kld_z0 = -0.5 * torch.mean(1 + zt_1_lar - torch.pow(zt_1_mean, 2) - torch.exp(zt_1_lar))
+    kld_z0 = -0.5 * torch.sum(1 + zt_1_lar - torch.pow(zt_1_mean, 2) - torch.exp(zt_1_lar))
 
     loss = 0.0
     # Activiation Regularization
     if alpha:
         loss = loss + sum(
-            alpha * dropped_rnn_h.pow(2).mean()
+            alpha * dropped_rnn_h.pow(2).sum()
             for dropped_rnn_h in outputs[-1:]
         )
     # Temporal Activation Regularization (slowness)
     if beta:
         loss = loss + sum(
-            beta * (rnn_h[1:] - rnn_h[:-1]).pow(2).mean()
+            beta * (rnn_h[1:] - rnn_h[:-1]).pow(2).sum()
             for rnn_h in raw_outputs[-1:]
         )
-
+    loss = loss + sum(
+         torch.abs(l1wt).sum()
+        for l1wt in l1_wt[-1:]
+    )
     z_post_var = torch.exp(z_post_logvar)
     z_prior_var = torch.exp(z_prior_logvar)
 
-    kld_z = 0.5 * torch.mean(
+    kld_z = 0.5 * torch.sum(
         z_prior_logvar - z_post_logvar + ((z_post_var + torch.pow(z_post_mean - z_prior_mean, 2)) / z_prior_var) - 1)
-    return (obs_cost + kld_z + kld_z0  + loss) , (kld_z + kld_z0)
+    return (obs_cost + kld_z + kld_z0  + loss)/batch_size , (kld_z + kld_z0)/batch_size
 
 
 class Trainer(object):
@@ -348,12 +356,10 @@ class Trainer(object):
             lstm_out, _ = self.model.z_lstm(x)
             #lstm_out, _ = self.model.z_rnn(lstm_out)
 
-
             zt_1_post = self.model.z_post_out(lstm_out[:, 0])
             zt_1_mean = zt_1_post[:, :self.model.z_dim]
             zt_1_lar = zt_1_post[:, self.model.z_dim:]
 
-            
             zt_1 = self.model.reparameterize(zt_1_mean, zt_1_lar, self.model.training)
             #zt_1 = [Normal(torch.zeros(self.model.z_dim).to(self.device), torch.ones(self.model.z_dim).to(self.device)).rsample() for i in range(len)]
             #zt_1 = torch.stack(zt_1, dim=0)
@@ -444,7 +450,7 @@ class Trainer(object):
 
     def recon_frame(self, epoch, original):
         with torch.no_grad():
-            _, _, _, _, _, _,_, recon, store_wt, store_wt1, _, _ = self.model(original, 1.0)
+            _, _, _, _, _, _,_, recon, store_wt, store_wt1, _, _, _ = self.model(original, 1.0)
             image = torch.cat((original, recon), dim=0)
             print(image.shape)
             image = image.view(2*original.shape[1], channel, 64, 64)
@@ -470,8 +476,8 @@ class Trainer(object):
             for i, data in enumerate(self.train):
                 data = data.to(self.device)
                 self.optimizer.zero_grad()
-                zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, z, recon_x,_ ,_, raw_outputs, outputs= self.model(data, temp)
-                loss, kl = loss_fn(self.model.dataset, data, recon_x, zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, raw_outputs, outputs, self.alpha, self.beta)
+                zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, z, recon_x,_ ,_, raw_outputs, outputs, l1_wt= self.model(data, temp)
+                loss, kl = loss_fn(self.model.dataset, data, recon_x, zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, raw_outputs, outputs, self.alpha, self.beta, l1_wt)
                 write_log('mse loss is %f, kl loss is %f'%(loss, kl), self.log_path)
                 print('index is %d, mse loss is %f, kl loss is %f'%(i, loss, kl))
                 if self.grad_clip > 0.0:
