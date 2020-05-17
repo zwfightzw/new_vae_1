@@ -14,11 +14,17 @@ class GRUCell(nn.Module):
         self.hidden_size = hidden_size
         self.bias = bias
         self.x2h = nn.Sequential(
-            nn.Linear(input_size, 3 * hidden_size, bias=True),
-            LayerNorm(3 * hidden_size)
+            nn.Linear(input_size, hidden_size, bias=True),
+            nn.ReLU(),nn.Linear(hidden_size, 3* hidden_size)
+
         )
         #self.x2h = nn.Linear(input_size, 3 * hidden_size, bias=bias)
-        self.h2h = nn.Linear(hidden_size, 3 * hidden_size, bias=bias)
+        #self.h2h = nn.Linear(hidden_size, 3 * hidden_size, bias=bias)
+        self.h2h = nn.Sequential(
+            nn.Linear(hidden_size, hidden_size, bias=True),
+            nn.ReLU(),nn.Linear(hidden_size, 3* hidden_size)
+
+        )
         self.reset_parameters()
 
     def reset_parameters(self):
