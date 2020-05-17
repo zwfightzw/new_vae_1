@@ -43,8 +43,6 @@ class bouncing_balls(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         return torch.load(self.path + '/%d.npy' % (idx + 1))
 
-
-
 def sample_gumbel(shape, eps=1e-20):
     U = torch.rand(shape).to(device)
     return -torch.log(-torch.log(U + eps) + eps)
@@ -100,13 +98,13 @@ class FullQDisentangledVAE(nn.Module):
         self.temperature = temperature
         self.dropout = 0.25
 
-        #self.z_lstm = nn.LSTM(self.conv_dim, self.hidden_dim//2, 1, bidirectional=True, batch_first=True)
-        self.z_lstm = nn.LSTM(self.conv_dim, self.hidden_dim, 1, batch_first=True)
-        #self.z_rnn = nn.RNN(self.hidden_dim *2, self.hidden_dim, batch_first=True)
+        self.z_lstm = nn.LSTM(self.conv_dim, self.hidden_dim, 1, bidirectional=True, batch_first=True)
+        #self.z_lstm = nn.LSTM(self.conv_dim, self.hidden_dim, 1, batch_first=True)
+        self.z_rnn = nn.RNN(self.hidden_dim *2, self.hidden_dim, batch_first=True)
         self.z_post_out = nn.Linear(self.hidden_dim, self.z_dim * 2)
 
         #self.z_prior_out_list = nn.Linear(self.hidden_dim,self.z_dim * 2)
-        self.z_prior_out_list = nn.Sequential(nn.Linear(self.hidden_dim, self.z_dim*2))
+        self.z_prior_out_list = nn.Sequential(nn.Linear(self.hidden_dim, self.hidden_dim//2), nn.ReLU(), nn.Linear(self.hidden_dim//2, self.z_dim*2))
         self.lockdrop = LockedDropout()
         self.z_to_c_fwd_list = [GRUCell(input_size=self.z_dim, hidden_size=self.hidden_dim).to(self.device)
             for i in range(self.block_size)]
@@ -250,9 +248,9 @@ class FullQDisentangledVAE(nn.Module):
 
 def loss_fn(dataset, original_seq, recon_seq, zt_1_mean, zt_1_lar,z_post_mean, z_post_logvar, z_prior_mean, z_prior_logvar, raw_outputs, outputs, alpha, beta, kl_weight):
 
-    if dataset == 'lpc':
+    if dataset == 'lpc' or dataset == 'bouncing_balls':
         obs_cost = F.mse_loss(recon_seq,original_seq, size_average=False)
-    elif dataset == 'moving_mnist' or dataset == 'bouncing_balls':
+    elif dataset == 'moving_mnist':
         obs_cost = F.binary_cross_entropy(recon_seq, original_seq, size_average=False)  #binary_cross_entropy
     batch_size = recon_seq.shape[0]
     # compute kl related to states, kl(q(ct|ot,ft)||p(ct|zt-1))
@@ -475,9 +473,9 @@ if __name__ == '__main__':
     # dataset
     parser.add_argument('--dset_name', type=str, default='bouncing_balls')  #moving_mnist, lpc, bouncing_balls
     # state size
-    parser.add_argument('--z-dim', type=int, default=72)  # 72 144
-    parser.add_argument('--hidden-dim', type=int, default=144) #  216 252
-    parser.add_argument('--conv-dim', type=int, default=144)  # 256 512
+    parser.add_argument('--z-dim', type=int, default=144)  # 72 144
+    parser.add_argument('--hidden-dim', type=int, default=252) #  216 252
+    parser.add_argument('--conv-dim', type=int, default=256)  # 256 512
     parser.add_argument('--block_size', type=int, default=3) # 3  4
     # data size
     parser.add_argument('--batch-size', type=int, default=64)
@@ -521,6 +519,7 @@ if __name__ == '__main__':
         test_loader = torch.utils.data.DataLoader(sprite_test, batch_size=1, shuffle=FLAGS, num_workers=4)
         channel = 3
 
+    print('*************************************')
     vae = FullQDisentangledVAE(temperature=FLAGS.temperature, frames=FLAGS.frame_size, z_dim=FLAGS.z_dim, hidden_dim=FLAGS.hidden_dim, conv_dim=FLAGS.conv_dim, block_size=FLAGS.block_size, channel=channel, dataset=FLAGS.dset_name, device=device)
 
     starttime = datetime.datetime.now()

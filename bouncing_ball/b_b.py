@@ -166,7 +166,7 @@ class BouncingBalls_gen():
         dat = 1 - dat.transpose((0,3,1,2))/255
         self.world.del_creature(0)
         self.world.del_creature(1)
-        #dat = 2 * (dat-0.5)
+        dat = 2 * (dat-0.5)
         return dat
 
 path = './dataset/'
