@@ -273,13 +273,13 @@ def loss_fn(dataset, original_seq, recon_seq, zt_1_mean, zt_1_lar,z_post_mean, z
     # Activiation Regularization
     if alpha:
         loss = loss + sum(
-            alpha * dropped_rnn_h.pow(2).mean()
+            alpha * dropped_rnn_h.pow(2).sum()
             for dropped_rnn_h in outputs[-1:]
         )
     # Temporal Activation Regularization (slowness)
     if beta:
         loss = loss + sum(
-            beta * (rnn_h[1:] - rnn_h[:-1]).pow(2).mean()
+            beta * (rnn_h[1:] - rnn_h[:-1]).pow(2).sum()
             for rnn_h in raw_outputs[-1:]
         )
 
@@ -288,7 +288,7 @@ def loss_fn(dataset, original_seq, recon_seq, zt_1_mean, zt_1_lar,z_post_mean, z
 
     kld_z = 0.5 * torch.sum(
         z_prior_logvar - z_post_logvar + ((z_post_var + torch.pow(z_post_mean - z_prior_mean, 2)) / z_prior_var) - 1)
-    return (obs_cost + kld_z + kld_z0 )/batch_size + loss , (kld_z + kld_z0)/batch_size
+    return (obs_cost + kld_z + kld_z0  + loss)/batch_size , (kld_z + kld_z0)/batch_size
 
 
 class Trainer(object):
