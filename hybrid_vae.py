@@ -262,33 +262,33 @@ class FullQDisentangledVAE(nn.Module):
 def loss_fn(dataset, original_seq, recon_seq, zt_1_mean, zt_1_lar,z_post_mean, z_post_logvar, z_prior_mean, z_prior_logvar, raw_outputs, outputs, alpha, beta):
 
     if dataset == 'lpc':
-        obs_cost = F.mse_loss(recon_seq,original_seq, size_average=False)
+        obs_cost = F.mse_loss(recon_seq,original_seq)
     elif dataset == 'moving_mnist' or dataset == 'bouncing_balls':
-        obs_cost = F.binary_cross_entropy(recon_seq, original_seq, size_average=False)  #binary_cross_entropy
+        obs_cost = F.binary_cross_entropy(recon_seq, original_seq)  #binary_cross_entropy
     batch_size = recon_seq.shape[0]
     # compute kl related to states, kl(q(ct|ot,ft)||p(ct|zt-1))
-    kld_z0 = -0.5 * torch.sum(1 + zt_1_lar - torch.pow(zt_1_mean, 2) - torch.exp(zt_1_lar))
+    kld_z0 = -0.5 * torch.mean(1 + zt_1_lar - torch.pow(zt_1_mean, 2) - torch.exp(zt_1_lar))
 
     loss = 0.0
     # Activiation Regularization
     if alpha:
         loss = loss + sum(
-            alpha * dropped_rnn_h.pow(2).sum()
+            alpha * dropped_rnn_h.pow(2).mean()
             for dropped_rnn_h in outputs[-1:]
         )
     # Temporal Activation Regularization (slowness)
     if beta:
         loss = loss + sum(
-            beta * (rnn_h[1:] - rnn_h[:-1]).pow(2).sum()
+            beta * (rnn_h[1:] - rnn_h[:-1]).pow(2).mean()
             for rnn_h in raw_outputs[-1:]
         )
 
     z_post_var = torch.exp(z_post_logvar)
     z_prior_var = torch.exp(z_prior_logvar)
 
-    kld_z = 0.5 * torch.sum(
+    kld_z = 0.5 * torch.mean(
         z_prior_logvar - z_post_logvar + ((z_post_var + torch.pow(z_post_mean - z_prior_mean, 2)) / z_prior_var) - 1)
-    return (obs_cost + kld_z + kld_z0  + loss)/batch_size , (kld_z + kld_z0)/batch_size
+    return (obs_cost + kld_z + kld_z0  + loss) , (kld_z + kld_z0)
 
 
 class Trainer(object):
