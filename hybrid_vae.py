@@ -32,6 +32,18 @@ class Sprites(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         return torch.load(self.path + '/%d.sprite' % (idx + 1))
 
+class bouncing_balls(torch.utils.data.Dataset):
+    def __init__(self, path, size):
+        self.path = path
+        self.length = size
+
+    def __len__(self):
+        return self.length
+
+    def __getitem__(self, idx):
+        return torch.load(self.path + '/%d.npy' % (idx + 1))
+
+
 
 def sample_gumbel(shape, eps=1e-20):
     U = torch.rand(shape).to(device)
@@ -503,8 +515,10 @@ if __name__ == '__main__':
         train_loader, test_loader = data.get_data_loader(FLAGS, True)
         channel = 1
     elif FLAGS.dset_name == 'bouncing_balls':
-        FLAGS.dset_path = os.path.join('./datasets', FLAGS.dset_name)
-        train_loader, test_loader = data.get_data_loader(FLAGS, True)
+        sprite = bouncing_balls('./bouncing_ball/dataset/', 6687)
+        sprite_test = bouncing_balls('./bouncing_ball/dataset/', 873)
+        train_loader = torch.utils.data.DataLoader(sprite, batch_size=FLAGS.batch_size, shuffle=True, num_workers=4)
+        test_loader = torch.utils.data.DataLoader(sprite_test, batch_size=1, shuffle=FLAGS, num_workers=4)
         channel = 3
 
     vae = FullQDisentangledVAE(temperature=FLAGS.temperature, frames=FLAGS.frame_size, z_dim=FLAGS.z_dim, hidden_dim=FLAGS.hidden_dim, conv_dim=FLAGS.conv_dim, block_size=FLAGS.block_size, channel=channel, dataset=FLAGS.dset_name, device=device)

@@ -3,7 +3,7 @@ import math
 import random
 from rtree import index
 import torchvision
-import torch
+import os
 import numpy as np
 import cv2
 
@@ -169,14 +169,12 @@ class BouncingBalls_gen():
         #dat = 2 * (dat-0.5)
         return dat
 
-'''
+path = './dataset/'
+
+if not os.path.exists(path):
+    os.makedirs(path)
+np.random.seed(0)
 a = BouncingBalls_gen(20, 2)
-aa = a.gen_ball_seq()
-
-
-bb = a.gen_ball_seq()
-dat = torch.from_numpy(bb)
-
-
-torchvision.utils.save_image(dat, 'sample.png')
-'''
+for i in range(6687):
+    aa = a.gen_ball_seq()
+    np.save('%s/%d'%(path, i), aa)
