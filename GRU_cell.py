@@ -25,6 +25,7 @@ class GRUCell(nn.Module):
             nn.ReLU(),nn.Linear(hidden_size, 3* hidden_size)
 
         )
+
         self.reset_parameters()
 
     def reset_parameters(self):

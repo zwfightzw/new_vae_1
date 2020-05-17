@@ -3,6 +3,7 @@ import torchvision
 import torch.utils.data
 import torch.nn.init
 import torch.optim as optim
+from torch.autograd import Variable
 from GRU_cell import GRUCell, ONLSTMCell, LSTMCell
 from modules import *
 import numpy as np
@@ -62,6 +63,17 @@ def gumbel_softmax(logits, temperature, latent_dim, hard=False):
     y_hard = (y_hard - y).detach() + y
     return y_hard.view(-1, latent_dim)
 
+class LockedDropout(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, dropout=0.5):
+        if not self.training or not dropout:
+            return x
+        m = x.data.new(1, x.size(1), x.size(2)).bernoulli_(1 - dropout)
+        mask = Variable(m, requires_grad=False) / (1 - dropout)
+        mask = mask.expand_as(x)
+        return mask * x
 
 class FullQDisentangledVAE(nn.Module):
     def __init__(self, temperature, frames, z_dim, conv_dim, hidden_dim, block_size, channel, dataset, device):
@@ -74,6 +86,7 @@ class FullQDisentangledVAE(nn.Module):
         self.device = device
         self.dataset = dataset
         self.temperature = temperature
+        self.dropout = 0.45
 
         self.z_lstm = nn.LSTM(self.conv_dim, self.hidden_dim, 1, bidirectional=True, batch_first=True)
         #self.z_lstm = nn.LSTM(self.conv_dim, self.hidden_dim*2, 1, batch_first=True)
@@ -82,6 +95,7 @@ class FullQDisentangledVAE(nn.Module):
 
         #self.z_prior_out_list = nn.Linear(self.hidden_dim,self.z_dim * 2)
         self.z_prior_out_list = nn.Sequential(nn.Linear(self.hidden_dim, self.z_dim*2))
+        self.lockdrop = LockedDropout()
         self.z_to_c_fwd_list = [GRUCell(input_size=self.z_dim, hidden_size=self.hidden_dim).to(self.device)
             for i in range(self.block_size)]
 
@@ -134,6 +148,8 @@ class FullQDisentangledVAE(nn.Module):
 
         zt_obs_list.append(post_z_1)
 
+        curr_layer = [None] * (seq_size-1)
+
         for t in range(1, seq_size):
 
             z_post_out = self.z_post_out(lstm_out[:, t])
@@ -171,6 +187,7 @@ class FullQDisentangledVAE(nn.Module):
                 z_fwd_list[fwd_t] = self.z_to_c_fwd_list[fwd_t](zt_1_tmp, z_fwd_list[fwd_t],w=wt[:,fwd_t].view(-1,1))#,w1=wt1[:,fwd_t].view(-1,1))
 
             z_fwd_all = torch.stack(z_fwd_list, dim=2).mean(dim=2).view(batch_size, self.hidden_dim)  #.mean(dim=2)
+            curr_layer[t-1] = z_fwd_all
             # p(xt|zt)
             #zt_obs = concat(z_fwd_all, z_post_sample)
             zt_obs_list.append(z_post_sample)
@@ -208,6 +225,12 @@ class FullQDisentangledVAE(nn.Module):
             z_prior_lar_list.append(z_fwd_latent_lar)
             post_z_1 = z_post_sample
 
+        raw_outputs = []
+        outputs = []
+        prev_layer = torch.stack(curr_layer)
+        raw_outputs.append(prev_layer)
+        prev_layer = self.lockdrop(prev_layer, self.dropout)
+        outputs.append(prev_layer)
 
         zt_obs_list = torch.stack(zt_obs_list, dim=1)
         z_post_mean_list = torch.stack(z_post_mean_list, dim=1)
@@ -215,7 +238,7 @@ class FullQDisentangledVAE(nn.Module):
         z_prior_mean_list = torch.stack(z_prior_mean_list, dim=1)
         z_prior_lar_list = torch.stack(z_prior_lar_list, dim=1)
 
-        return zt_1_mean, zt_1_lar, z_post_mean_list, z_post_lar_list, z_prior_mean_list, z_prior_lar_list, zt_obs_list, store_wt, store_wt1
+        return zt_1_mean, zt_1_lar, z_post_mean_list, z_post_lar_list, z_prior_mean_list, z_prior_lar_list, zt_obs_list, store_wt, store_wt1, raw_outputs, outputs
 
     def cumsoftmax(self, x, temp=0.5, dim=-1):
         if self.training:
@@ -224,19 +247,19 @@ class FullQDisentangledVAE(nn.Module):
         # x = torch.log(x)/temp
         # x = torch.exp(x)
         # x = x / torch.sum(x)
-        # x = torch.cumsum(x, dim=dim)
+        x = torch.cumsum(x, dim=dim)
         return x
 
     def forward(self, x, temp):
         num_samples = x.shape[0]
         seq_len = x.shape[1]
         conv_x = self.enc_obs(x.view(-1, *x.size()[2:])).view(num_samples, seq_len, -1)
-        zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, z, store_wt, store_wt1 = self.encode_z(conv_x)
+        zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, z, store_wt, store_wt1, raw_outputs, outputs  = self.encode_z(conv_x)
         #z = gumbel_softmax(z, temp, self.z_dim)
         recon_x = self.dec_obs(z.view(num_samples * seq_len, -1)).view(num_samples, seq_len, *x.size()[2:])
-        return zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, z, recon_x, store_wt, store_wt1
+        return zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, z, recon_x, store_wt, store_wt1, raw_outputs, outputs
 
-def loss_fn(dataset, original_seq, recon_seq, zt_1_mean, zt_1_lar,z_post_mean, z_post_logvar, z_prior_mean, z_prior_logvar):
+def loss_fn(dataset, original_seq, recon_seq, zt_1_mean, zt_1_lar,z_post_mean, z_post_logvar, z_prior_mean, z_prior_logvar, raw_outputs, outputs, alpha, beta):
 
     if dataset == 'lpc':
         obs_cost = F.mse_loss(recon_seq,original_seq, size_average=False)
@@ -246,17 +269,31 @@ def loss_fn(dataset, original_seq, recon_seq, zt_1_mean, zt_1_lar,z_post_mean, z
     # compute kl related to states, kl(q(ct|ot,ft)||p(ct|zt-1))
     kld_z0 = -0.5 * torch.sum(1 + zt_1_lar - torch.pow(zt_1_mean, 2) - torch.exp(zt_1_lar))
 
+    loss = 0.0
+    # Activiation Regularization
+    if alpha:
+        loss = loss + sum(
+            alpha * dropped_rnn_h.pow(2).mean()
+            for dropped_rnn_h in outputs[-1:]
+        )
+    # Temporal Activation Regularization (slowness)
+    if beta:
+        loss = loss + sum(
+            beta * (rnn_h[1:] - rnn_h[:-1]).pow(2).mean()
+            for rnn_h in raw_outputs[-1:]
+        )
+
     z_post_var = torch.exp(z_post_logvar)
     z_prior_var = torch.exp(z_prior_logvar)
 
     kld_z = 0.5 * torch.sum(
         z_prior_logvar - z_post_logvar + ((z_post_var + torch.pow(z_post_mean - z_prior_mean, 2)) / z_prior_var) - 1)
-    return (obs_cost + kld_z + kld_z0 )/batch_size , (kld_z + kld_z0)/batch_size
+    return (obs_cost + kld_z + kld_z0 )/batch_size + loss , (kld_z + kld_z0)/batch_size
 
 
 class Trainer(object):
     def __init__(self, model, device, train, test, epochs, batch_size, learning_rate, nsamples,
-                 sample_path, recon_path, checkpoints, log_path, grad_clip, channel):
+                 sample_path, recon_path, checkpoints, log_path, grad_clip, channel, alpha, beta):
         self.train = train
         self.test = test
         self.start_epoch = 0
@@ -275,6 +312,8 @@ class Trainer(object):
         self.log_path = log_path
         self.epoch_losses = []
         self.channel = channel
+        self.alpha = alpha
+        self.beta = beta
 
     def save_checkpoint(self, epoch):
         torch.save({
@@ -405,7 +444,7 @@ class Trainer(object):
 
     def recon_frame(self, epoch, original):
         with torch.no_grad():
-            _, _, _, _, _, _,_, recon, store_wt, store_wt1 = self.model(original, 1.0)
+            _, _, _, _, _, _,_, recon, store_wt, store_wt1, _, _ = self.model(original, 1.0)
             image = torch.cat((original, recon), dim=0)
             print(image.shape)
             image = image.view(2*original.shape[1], channel, 64, 64)
@@ -431,8 +470,8 @@ class Trainer(object):
             for i, data in enumerate(self.train):
                 data = data.to(self.device)
                 self.optimizer.zero_grad()
-                zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, z, recon_x,_ ,_= self.model(data, temp)
-                loss, kl = loss_fn(self.model.dataset, data, recon_x, zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar)
+                zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, z, recon_x,_ ,_, raw_outputs, outputs= self.model(data, temp)
+                loss, kl = loss_fn(self.model.dataset, data, recon_x, zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, raw_outputs, outputs, self.alpha, self.beta)
                 write_log('mse loss is %f, kl loss is %f'%(loss, kl), self.log_path)
                 print('index is %d, mse loss is %f, kl loss is %f'%(i, loss, kl))
                 if self.grad_clip > 0.0:
@@ -484,6 +523,11 @@ if __name__ == '__main__':
     parser.add_argument('--max-epochs', type=int, default=100)
     parser.add_argument('--gpu_id', type=int, default=1)
 
+    parser.add_argument('--alpha', type=float, default=2,
+                        help='alpha L2 regularization on RNN activation (alpha = 0 means no regularization)')
+    parser.add_argument('--beta', type=float, default=1,
+                        help='beta slowness regularization applied on RNN activiation (beta = 0 means no regularization)')
+
     FLAGS = parser.parse_args()
     np.random.seed(FLAGS.seed)
     torch.manual_seed(FLAGS.seed)
@@ -530,7 +574,7 @@ if __name__ == '__main__':
                       learning_rate=FLAGS.learn_rate,
                       checkpoints='%s/%s-disentangled-vae.model' % (model_path, FLAGS.method), nsamples=FLAGS.nsamples,
                       sample_path=log_sample,
-                      recon_path=log_recon, log_path=log_path, grad_clip=FLAGS.grad_clip, channel=channel)
+                      recon_path=log_recon, log_path=log_path, grad_clip=FLAGS.grad_clip, channel=channel, alpha=FLAGS.alpha, beta=FLAGS.beta)
     #trainer.load_checkpoint()
     trainer.train_model()
     endtime = datetime.datetime.now()
