@@ -88,9 +88,9 @@ class FullQDisentangledVAE(nn.Module):
         self.temperature = temperature
         self.dropout = 0.45
 
-        self.z_lstm = nn.LSTM(self.conv_dim, self.hidden_dim, 1, bidirectional=True, batch_first=True)
+        self.z_lstm = nn.LSTM(self.conv_dim, self.hidden_dim//2, 1, bidirectional=True, batch_first=True)
         #self.z_lstm = nn.LSTM(self.conv_dim, self.hidden_dim*2, 1, batch_first=True)
-        self.z_rnn = nn.RNN(self.hidden_dim *2, self.hidden_dim, batch_first=True)
+        #self.z_rnn = nn.RNN(self.hidden_dim *2, self.hidden_dim, batch_first=True)
         self.z_post_out = nn.Linear(self.hidden_dim, self.z_dim * 2)
 
         #self.z_prior_out_list = nn.Linear(self.hidden_dim,self.z_dim * 2)
@@ -120,7 +120,7 @@ class FullQDisentangledVAE(nn.Module):
         seq_size = x.shape[1]
 
         lstm_out, _ = self.z_lstm(x)
-        lstm_out, _ = self.z_rnn(lstm_out)
+        #lstm_out, _ = self.z_rnn(lstm_out)
         each_block_size = self.z_dim//self.block_size
 
         z_post_mean_list = []
@@ -346,7 +346,7 @@ class Trainer(object):
             #len = self.samples
             x = self.model.enc_obs(sample.view(-1, *sample.size()[2:])).view(1, sample.shape[1], -1)
             lstm_out, _ = self.model.z_lstm(x)
-            lstm_out, _ = self.model.z_rnn(lstm_out)
+            #lstm_out, _ = self.model.z_rnn(lstm_out)
 
 
             zt_1_post = self.model.z_post_out(lstm_out[:, 0])
