@@ -1,5 +1,6 @@
 import os
 import torchvision
+import torch
 import torch.utils.data
 import torch.nn.init
 import torch.optim as optim
@@ -41,7 +42,8 @@ class bouncing_balls(torch.utils.data.Dataset):
         return self.length
 
     def __getitem__(self, idx):
-        return torch.load(self.path + '/%d.npy' % (idx + 1))
+        data = np.load(self.path + '/%d.npy' % (idx))
+        return torch.from_numpy(data).to(device)
 
 def sample_gumbel(shape, eps=1e-20):
     U = torch.rand(shape).to(device)
@@ -129,7 +131,7 @@ class FullQDisentangledVAE(nn.Module):
         seq_size = x.shape[1]
 
         lstm_out, _ = self.z_lstm(x)
-        #lstm_out, _ = self.z_rnn(lstm_out)
+        lstm_out, _ = self.z_rnn(lstm_out)
         each_block_size = self.z_dim//self.block_size
 
         z_post_mean_list = []
@@ -332,7 +334,7 @@ class Trainer(object):
             #len = self.samples
             x = self.model.enc_obs(sample.view(-1, *sample.size()[2:])).view(1, sample.shape[1], -1)
             lstm_out, _ = self.model.z_lstm(x)
-            #lstm_out, _ = self.model.z_rnn(lstm_out)
+            lstm_out, _ = self.model.z_rnn(lstm_out)
 
             zt_1_post = self.model.z_post_out(lstm_out[:, 0])
             zt_1_mean = zt_1_post[:, :self.model.z_dim]
@@ -519,7 +521,6 @@ if __name__ == '__main__':
         test_loader = torch.utils.data.DataLoader(sprite_test, batch_size=1, shuffle=FLAGS, num_workers=4)
         channel = 3
 
-    print('*************************************')
     vae = FullQDisentangledVAE(temperature=FLAGS.temperature, frames=FLAGS.frame_size, z_dim=FLAGS.z_dim, hidden_dim=FLAGS.hidden_dim, conv_dim=FLAGS.conv_dim, block_size=FLAGS.block_size, channel=channel, dataset=FLAGS.dset_name, device=device)
 
     starttime = datetime.datetime.now()

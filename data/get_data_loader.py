@@ -4,7 +4,7 @@ import torchvision.transforms as transforms
 
 import data.video_transforms as vtransforms
 from .moving_mnist import MovingMNIST
-from .bouncing_balls import BouncingBalls
+#from .bouncing_balls import BouncingBalls
 
 def get_data_loader(opt, train):
   if opt.dset_name == 'moving_mnist':
@@ -14,7 +14,7 @@ def get_data_loader(opt, train):
 
   elif opt.dset_name == 'bouncing_balls':
     transform = transforms.Compose([vtransforms.ToTensor()])
-    dset = BouncingBalls(opt.dset_path, opt.frame_size, transform)
+    #dset = BouncingBalls(opt.dset_path, opt.frame_size, transform)
 
   else:
     raise NotImplementedError
