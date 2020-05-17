@@ -233,15 +233,14 @@ class FullQDisentangledVAE(nn.Module):
         seq_len = x.shape[1]
         conv_x = self.enc_obs(x.view(-1, *x.size()[2:])).view(num_samples, seq_len, -1)
         zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, z, store_wt, raw_outputs, outputs  = self.encode_z(conv_x)
-        #z = gumbel_softmax(z, temp, self.z_dim)
         recon_x = self.dec_obs(z.view(num_samples * seq_len, -1)).view(num_samples, seq_len, *x.size()[2:])
         return zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, z, recon_x, store_wt, raw_outputs, outputs
 
-def loss_fn(dataset, original_seq, recon_seq, zt_1_mean, zt_1_lar,z_post_mean, z_post_logvar, z_prior_mean, z_prior_logvar, raw_outputs, outputs, alpha, beta):
+def loss_fn(dataset, original_seq, recon_seq, zt_1_mean, zt_1_lar,z_post_mean, z_post_logvar, z_prior_mean, z_prior_logvar, raw_outputs, outputs, alpha, beta, kl_weight):
 
-    if dataset == 'lpc' or dataset == 'bouncing_balls':
+    if dataset == 'lpc':
         obs_cost = F.mse_loss(recon_seq,original_seq, size_average=False)
-    elif dataset == 'moving_mnist':
+    elif dataset == 'moving_mnist' or dataset == 'bouncing_balls':
         obs_cost = F.binary_cross_entropy(recon_seq, original_seq, size_average=False)  #binary_cross_entropy
     batch_size = recon_seq.shape[0]
     # compute kl related to states, kl(q(ct|ot,ft)||p(ct|zt-1))
@@ -266,12 +265,12 @@ def loss_fn(dataset, original_seq, recon_seq, zt_1_mean, zt_1_lar,z_post_mean, z
 
     kld_z = 0.5 * torch.sum(
         z_prior_logvar - z_post_logvar + ((z_post_var + torch.pow(z_post_mean - z_prior_mean, 2)) / z_prior_var) - 1)
-    return (obs_cost + kld_z + kld_z0 )/batch_size , (kld_z + kld_z0)/batch_size
+    return (obs_cost + kl_weight*(kld_z + kld_z0) )/batch_size ,kl_weight*( kld_z0)/batch_size,  kl_weight*(kld_z)/batch_size
 
 
 class Trainer(object):
     def __init__(self, model, device, train, test, epochs, batch_size, learning_rate, nsamples,
-                 sample_path, recon_path, checkpoints, log_path, grad_clip, channel, alpha, beta):
+                 sample_path, recon_path, checkpoints, log_path, grad_clip, channel, alpha, beta, kl_weight):
         self.train = train
         self.test = test
         self.start_epoch = 0
@@ -292,6 +291,7 @@ class Trainer(object):
         self.channel = channel
         self.alpha = alpha
         self.beta = beta
+        self.kl_weight = kl_weight
 
     def save_checkpoint(self, epoch):
         torch.save({
@@ -421,26 +421,27 @@ class Trainer(object):
         for epoch in range(self.start_epoch, self.epochs):
             losses = []
             kl_loss = []
+            kl0_loss = []
             write_log("Running Epoch : {}".format(epoch + 1), self.log_path)
             for i, data in enumerate(self.train):
                 data = data.to(self.device)
                 self.optimizer.zero_grad()
                 zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, z, recon_x,_ , raw_outputs, outputs= self.model(data, temp)
-                loss, kl = loss_fn(self.model.dataset, data, recon_x, zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, raw_outputs, outputs, self.alpha, self.beta)
-                write_log('mse loss is %f, kl loss is %f'%(loss, kl), self.log_path)
-                print('index is %d, mse loss is %f, kl loss is %f'%(i, loss, kl))
+                loss, kld_z0, kld_z = loss_fn(self.model.dataset, data, recon_x, zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, raw_outputs, outputs, self.alpha, self.beta, self.kl_weight)
+                write_log('mse loss is %f, kl0 loss is %f, kl loss is %f'%(loss, kld_z0, kld_z), self.log_path)
+                print('index is %d, mse loss is %f, kl0 loss is %f, kl loss is %f'%(i, loss, kld_z0, kld_z))
                 if self.grad_clip > 0.0:
                     nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
                 loss.backward()
                 self.optimizer.step()
-                if i % 50 == 1:
-                    temp = np.maximum(temp * np.exp(-ANNEAL_RATE * i), temp_min)
-                kl_loss.append(kl.item())
+                kl_loss.append(kld_z.item())
+                kl0_loss.append(kld_z0.item())
                 losses.append(loss.item())
             meanloss = np.mean(losses)
             klloss = np.mean(kl_loss)
+            kl0loss = np.mean(kl0_loss)
             self.epoch_losses.append((meanloss,klloss))
-            write_log("Epoch {} : Average Loss: {}, KL loss :{}".format(epoch + 1, meanloss, klloss), self.log_path)
+            write_log("Epoch {} : Average Loss: {}, KL0 loss :{}, KL loss :{}".format(epoch + 1, meanloss, kl0loss,klloss), self.log_path)
             #self.save_checkpoint(epoch)
             self.model.eval()
             sample = iter(self.test).next().to(self.device)
@@ -482,6 +483,8 @@ if __name__ == '__main__':
                         help='alpha L2 regularization on RNN activation (alpha = 0 means no regularization)')
     parser.add_argument('--beta', type=float, default=1,
                         help='beta slowness regularization applied on RNN activiation (beta = 0 means no regularization)')
+    parser.add_argument('--kl_weight', type=float, default=1.0)
+
 
     FLAGS = parser.parse_args()
     np.random.seed(FLAGS.seed)
@@ -529,7 +532,7 @@ if __name__ == '__main__':
                       learning_rate=FLAGS.learn_rate,
                       checkpoints='%s/%s-disentangled-vae.model' % (model_path, FLAGS.method), nsamples=FLAGS.nsamples,
                       sample_path=log_sample,
-                      recon_path=log_recon, log_path=log_path, grad_clip=FLAGS.grad_clip, channel=channel, alpha=FLAGS.alpha, beta=FLAGS.beta)
+                      recon_path=log_recon, log_path=log_path, grad_clip=FLAGS.grad_clip, channel=channel, alpha=FLAGS.alpha, beta=FLAGS.beta, kl_weight=FLAGS.kl_weight)
     #trainer.load_checkpoint()
     trainer.train_model()
     endtime = datetime.datetime.now()
