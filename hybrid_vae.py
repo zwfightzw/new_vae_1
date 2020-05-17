@@ -43,7 +43,7 @@ class bouncing_balls(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         data = np.load(self.path + '/%d.npy' % (idx))
-        return torch.from_numpy(data).to(device)
+        return torch.from_numpy(data)
 
 def sample_gumbel(shape, eps=1e-20):
     U = torch.rand(shape).to(device)
