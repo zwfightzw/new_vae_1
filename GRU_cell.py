@@ -14,15 +14,15 @@ class GRUCell(nn.Module):
         self.hidden_size = hidden_size
         self.bias = bias
         self.x2h = nn.Sequential(
-            nn.Linear(input_size, hidden_size, bias=True),
-            nn.ReLU(),nn.Linear(hidden_size, 3* hidden_size)
+            nn.Linear(input_size, 3*hidden_size, bias=True),
+            #nn.ReLU(),nn.Linear(hidden_size, 3* hidden_size)
 
         )
         #self.x2h = nn.Linear(input_size, 3 * hidden_size, bias=bias)
         #self.h2h = nn.Linear(hidden_size, 3 * hidden_size, bias=bias)
         self.h2h = nn.Sequential(
-            nn.Linear(hidden_size, hidden_size, bias=True),
-            nn.ReLU(),nn.Linear(hidden_size, 3* hidden_size)
+            nn.Linear(hidden_size, 3*hidden_size, bias=True),
+            #nn.ReLU(),nn.Linear(hidden_size, 3* hidden_size)
 
         )
 
@@ -50,6 +50,7 @@ class GRUCell(nn.Module):
             inputgate = F.sigmoid(i_i + h_i)
         else:
             inputgate = 1 - (1-F.sigmoid(i_i + h_i)) * w
+            #inputgate = F.sigmoid(i_i + h_i) *w
         if w1 is None:
             newgate = F.tanh(i_n + (resetgate * h_n))
         else:
