@@ -480,14 +480,14 @@ if __name__ == '__main__':
     parser.add_argument('--conv-dim', type=int, default=256)  # 256 512
     parser.add_argument('--block_size', type=int, default=3) # 3  4
     # data size
-    parser.add_argument('--batch-size', type=int, default=64)
+    parser.add_argument('--batch-size', type=int, default=32)
     parser.add_argument('--frame-size', type=int, default=20)
     parser.add_argument('--nsamples', type=int, default=2)
 
     # optimization
     parser.add_argument('--learn-rate', type=float, default=0.0005)
     parser.add_argument('--temperature', type=float, default=1.0)
-    parser.add_argument('--grad-clip', type=float, default=10.0)
+    parser.add_argument('--grad-clip', type=float, default=0.0)
     parser.add_argument('--max-epochs', type=int, default=100)
     parser.add_argument('--gpu_id', type=int, default=1)
 
@@ -515,10 +515,10 @@ if __name__ == '__main__':
         train_loader, test_loader = data.get_data_loader(FLAGS, True)
         channel = 1
     elif FLAGS.dset_name == 'bouncing_balls':
-        sprite = bouncing_balls('./bouncing_ball/dataset/', 6687)
-        sprite_test = bouncing_balls('./bouncing_ball/dataset/', 873)
+        sprite = bouncing_balls('./bouncing_ball/dataset/', 3000)
+        sprite_test = bouncing_balls('./bouncing_ball/dataset/', 300)
         train_loader = torch.utils.data.DataLoader(sprite, batch_size=FLAGS.batch_size, shuffle=True, num_workers=4)
-        test_loader = torch.utils.data.DataLoader(sprite_test, batch_size=1, shuffle=FLAGS, num_workers=4)
+        test_loader = torch.utils.data.DataLoader(sprite_test, batch_size=1, shuffle=True, num_workers=4)
         channel = 3
 
     vae = FullQDisentangledVAE(temperature=FLAGS.temperature, frames=FLAGS.frame_size, z_dim=FLAGS.z_dim, hidden_dim=FLAGS.hidden_dim, conv_dim=FLAGS.conv_dim, block_size=FLAGS.block_size, channel=channel, dataset=FLAGS.dset_name, device=device)
