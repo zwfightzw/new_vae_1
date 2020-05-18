@@ -274,8 +274,7 @@ def loss_fn(dataset, original_seq, recon_seq, zt_1_mean, zt_1_lar,z_post_mean, z
 
     z_post_var = torch.exp(z_post_logvar)
     z_prior_var = torch.exp(z_prior_logvar)
-    #kld_z = 0.5 * torch.sum( z_prior_logvar - z_post_logvar + ((z_post_var + torch.pow(z_post_mean - z_prior_mean, 2)) / z_prior_var) - 1)
-    kld_z = 0.5 * torch.sum(z_post_logvar - z_prior_logvar + ((z_prior_var + torch.pow(z_prior_mean - z_post_mean, 2)) / z_post_var) - 1)
+    kld_z = 0.5 * torch.sum( z_prior_logvar - z_post_logvar + ((z_post_var + torch.pow(z_post_mean - z_prior_mean, 2)) / z_prior_var) - 1)
 
     return (obs_cost + kl_weight*(kld_z + kld_z0) + loss)/batch_size ,kl_weight*( kld_z0)/batch_size,  kl_weight*(kld_z)/batch_size
 
@@ -419,8 +418,11 @@ class Trainer(object):
             return store_wt
 
     def train_model(self):
-        temp_min = 0.5
-        ANNEAL_RATE = 0.00003
+
+        # The number of epochs at which KL loss should be included
+        klstart = 40
+        # number of epochs over which KL scaling is increased from 0 to 1
+        kl_annealtime = 20
         self.model.eval()
         sample = iter(self.test).next().to(self.device)
         store_wt = self.sample_frames(0 + 1, sample)
@@ -434,6 +436,10 @@ class Trainer(object):
             losses = []
             kl_loss = []
             kl0_loss = []
+
+            if epoch > klstart:
+                self.kl_weight = min(self.kl_weight + (1. / kl_annealtime), 1.)
+
             write_log("Running Epoch : {}".format(epoch + 1), self.log_path)
             for i, data in enumerate(self.train):
                 data = data.to(self.device)
@@ -495,7 +501,7 @@ if __name__ == '__main__':
                         help='alpha L2 regularization on RNN activation (alpha = 0 means no regularization)')
     parser.add_argument('--beta', type=float, default=1,
                         help='beta slowness regularization applied on RNN activiation (beta = 0 means no regularization)')
-    parser.add_argument('--kl_weight', type=float, default=1.0)
+    parser.add_argument('--kl_weight', type=float, default=0.0)
 
 
     FLAGS = parser.parse_args()
