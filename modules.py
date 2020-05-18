@@ -127,11 +127,7 @@ class Encoder(nn.Module):
                                     kernel_size=4,
                                     stride=2,
                                     padding=1),  # 32 x 32
-                        ConvLayer2D(input_size=feat_size,
-                                    output_size=feat_size,
-                                    kernel_size=4,
-                                    stride=2,
-                                    padding=1),  # 16 x 16
+                        #ConvLayer2D(input_size=feat_size,output_size=feat_size,kernel_size=4,stride=2,padding=1),  # 16 x 16
                         ConvLayer2D(input_size=feat_size,
                                     output_size=feat_size,
                                     kernel_size=4,
@@ -183,8 +179,7 @@ class Decoder(nn.Module):
                                                       kernel_size=4,
                                                       stride=1,
                                                       padding=0),
-                                     ConvTransLayer2D(input_size=feat_size,
-                                                      output_size=feat_size),
+                                     #ConvTransLayer2D(input_size=feat_size,output_size=feat_size),
                                      ConvTransLayer2D(input_size=feat_size,
                                                       output_size=feat_size),
                                      ConvTransLayer2D(input_size=feat_size,

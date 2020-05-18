@@ -12,6 +12,8 @@ import datetime
 import dateutil.tz
 import argparse
 import data
+import torchvision.transforms as transforms
+import data.video_transforms as vtransforms
 
 def write_log(log, log_path):
     f = open(log_path, mode='a')
@@ -43,7 +45,11 @@ class bouncing_balls(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         data = np.load(self.path + '/%d.npy' % (idx))
-        return torch.from_numpy(data)
+        data = data.transpose((0,2,3,1))
+        transform = transforms.Compose([vtransforms.ToTensor()])
+        data = vtransforms.resize(data, size=(32,32),interpolation='bilinear')
+        data = transform(data)
+        return data
 
 def sample_gumbel(shape, eps=1e-20):
     U = torch.rand(shape).to(device)
@@ -106,7 +112,7 @@ class FullQDisentangledVAE(nn.Module):
         self.z_post_out = nn.Linear(self.hidden_dim, self.z_dim * 2)
 
         #self.z_prior_out_list = nn.Linear(self.hidden_dim,self.z_dim * 2)
-        self.z_prior_out_list = nn.Sequential(nn.Linear(self.hidden_dim, self.hidden_dim//2), nn.ReLU(), nn.Linear(self.hidden_dim//2, self.z_dim*2))
+        self.z_prior_out_list = nn.Sequential(nn.Linear(self.hidden_dim, self.z_dim*2))
         self.lockdrop = LockedDropout()
         self.z_to_c_fwd_list = [GRUCell(input_size=self.z_dim, hidden_size=self.hidden_dim).to(self.device)
             for i in range(self.block_size)]
@@ -303,6 +309,7 @@ class Trainer(object):
         self.alpha = alpha
         self.beta = beta
         self.kl_weight = kl_weight
+        self.shape = 32
 
     def save_checkpoint(self, epoch):
         torch.save({
@@ -404,7 +411,7 @@ class Trainer(object):
 
             zt_dec = torch.stack(zt_dec, dim=1)
             recon_x = self.model.dec_obs(zt_dec.view(len * self.model.frames, -1)).view(len, self.model.frames, -1)
-            recon_x = recon_x.view(len * x.shape[1], self.channel, 64, 64)
+            recon_x = recon_x.view(len * x.shape[1], self.channel, self.shape, self.shape)
             torchvision.utils.save_image(recon_x, '%s/epoch%d.png' % (self.sample_path, epoch))
             return store_wt
 
@@ -413,7 +420,7 @@ class Trainer(object):
             _, _, _, _, _, _,_, recon, store_wt, _, _= self.model(original, 1.0)
             image = torch.cat((original, recon), dim=0)
             print(image.shape)
-            image = image.view(2*original.shape[1], channel, 64, 64)
+            image = image.view(2*original.shape[1], channel, self.shape, self.shape)
             torchvision.utils.save_image(image, '%s/epoch%d.png' % (self.recon_path, epoch))
             return store_wt
 
@@ -486,7 +493,7 @@ if __name__ == '__main__':
     parser.add_argument('--conv-dim', type=int, default=256)  # 256 512
     parser.add_argument('--block_size', type=int, default=3) # 3  4
     # data size
-    parser.add_argument('--batch-size', type=int, default=32)
+    parser.add_argument('--batch-size', type=int, default=64)
     parser.add_argument('--frame-size', type=int, default=20)
     parser.add_argument('--nsamples', type=int, default=2)
 
@@ -521,7 +528,7 @@ if __name__ == '__main__':
         train_loader, test_loader = data.get_data_loader(FLAGS, True)
         channel = 1
     elif FLAGS.dset_name == 'bouncing_balls':
-        sprite = bouncing_balls('./bouncing_ball/dataset/', 1000)
+        sprite = bouncing_balls('./bouncing_ball/dataset/', 6000)
         sprite_test = bouncing_balls('./bouncing_ball/dataset/', 300)
         train_loader = torch.utils.data.DataLoader(sprite, batch_size=FLAGS.batch_size, shuffle=True, num_workers=4)
         test_loader = torch.utils.data.DataLoader(sprite_test, batch_size=1, shuffle=True, num_workers=4)
