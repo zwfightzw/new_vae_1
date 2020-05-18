@@ -253,9 +253,9 @@ class FullQDisentangledVAE(nn.Module):
 
 def loss_fn(dataset, original_seq, recon_seq, zt_1_mean, zt_1_lar,z_post_mean, z_post_logvar, z_prior_mean, z_prior_logvar, raw_outputs, outputs, alpha, beta, kl_weight):
 
-    if dataset == 'lpc' or dataset == 'bouncing_balls':
+    if dataset == 'lpc':
         obs_cost = F.mse_loss(recon_seq,original_seq, size_average=False)
-    elif dataset == 'moving_mnist':
+    elif dataset == 'moving_mnist' or dataset == 'bouncing_balls':
         obs_cost = F.binary_cross_entropy(recon_seq, original_seq, size_average=False)  #binary_cross_entropy
     batch_size = recon_seq.shape[0]
     # compute kl related to states, kl(q(ct|ot,ft)||p(ct|zt-1))
@@ -429,6 +429,8 @@ class Trainer(object):
         kl_annealtime = 20
         self.model.eval()
         sample = iter(self.test).next().to(self.device)
+        print(sample.shape)
+        print(sample[0,0,:,0,0].cpu().numpy())
         store_wt = self.sample_frames(0 + 1, sample)
         store_wt1 = self.recon_frame(0 + 1, sample)
         write_log(store_wt, self.log_path)
@@ -483,7 +485,7 @@ if __name__ == '__main__':
     # method
     parser.add_argument('--method', type=str, default='Hybrid')
     # dataset
-    parser.add_argument('--dset_name', type=str, default='bouncing_balls')  #moving_mnist, lpc, bouncing_balls
+    parser.add_argument('--dset_name', type=str, default='lpc')  #moving_mnist, lpc, bouncing_balls
     # state size
     parser.add_argument('--z-dim', type=int, default=144)  # 72 144
     parser.add_argument('--hidden-dim', type=int, default=252) #  216 252

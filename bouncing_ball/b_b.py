@@ -39,46 +39,44 @@ class Creature:
         self.x += self.dx
         self.y += self.dy
 
-        ddx = random.random() * 0.2 - 0.15
-        ddy = random.random() * 0.2 - 0.15
+        ddx = random.random() * 0.1 - 0.1
+        ddy = random.random() * 0.1 - 0.1
 
         if self.collision_count >1:
             self.color = random_color()
             self.collision_count = 0
 
         # Bounce off walls:
-        bounding = -1
+        bounding = 1#-2
         if self.x < self.radius + bounding:
-            ddx -= self.x - self.radius
+            ddx -= self.x - self.radius - bounding
             self.collision_count +=1
         elif self.x > world.width - self.radius -bounding:
-            ddx += world.width - self.radius - self.x
+            ddx += world.width - self.radius - self.x - bounding
             self.collision_count += 1
         if self.y < self.radius +bounding :
-            ddy -= self.y - self.radius
+            ddy -= self.y - self.radius -bounding
             self.collision_count += 1
         elif self.y > world.height - self.radius -bounding:
-            ddy += world.height - self.radius - self.y
+            ddy += world.height - self.radius - self.y - bounding
             self.collision_count += 1
 
 
         for other in overlapping:
             dist = self.distance(other.x, other.y)
             if dist:
-                ddx -= 3 * (other.x - self.x) / dist
-                ddy -= 3 * (other.y - self.y) / dist
+                ddx -= 2 * (other.x - self.x) / dist
+                ddy -= 2 * (other.y - self.y) / dist
 
         self.dx += ddx
         self.dy += ddy
 
         # Maximum speed:
-        speed = 8
+        speed = 6
         if abs(self.dx) > speed:
             self.dx *= speed / abs(self.dx)
         if abs(self.dy) > speed:
             self.dy *= speed / abs(self.dy)
-
-
 
 
     def draw(self, screen):
@@ -124,16 +122,16 @@ class World:
             creature.draw(screen)
 
     def random_creature(self):
-        radius = 4
+        radius = 2
         x = self.width // 2 - 2 * radius * np.random.normal(0, 1)
         if x>=self.width or x<=0:
             x = random.random() * self.width
-        y = self.height // 2 + 5 * radius * np.random.normal(0, 1)
+        y = self.height // 2 + 2 * radius * np.random.normal(0, 1)
         if y >= self.width or y <= 0:
             y = random.random() * self.height
         creature = Creature(x,y,
-                            random.random() * 6 - 4,
-                            random.random() * 4 - 4,
+                            random.random() * 3 - 2,
+                            random.random() * 2 - 2,
                             color=random_color(),
                             radius=radius)
         return creature
@@ -163,11 +161,13 @@ class BouncingBalls_gen():
             self.world.step()
             self.world.draw(dat[i])
 
-        dat = 1 - dat.transpose((0,3,1,2))/255
+        #dat = 1 - dat.transpose((0,3,1,2))/255
+        dat = dat.transpose((0, 3, 1, 2)) / 255
         self.world.del_creature(0)
         self.world.del_creature(1)
-        dat = 2 * (dat-0.5)
+        #dat = 2 * (dat-0.5)
         return dat
+
 
 path = './dataset/'
 
