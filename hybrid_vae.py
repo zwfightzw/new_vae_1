@@ -94,7 +94,7 @@ class LockedDropout(nn.Module):
         return mask * x
 
 class FullQDisentangledVAE(nn.Module):
-    def __init__(self, temperature, frames, z_dim, conv_dim, hidden_dim, block_size, channel, dataset, device):
+    def __init__(self, temperature, frames, z_dim, conv_dim, hidden_dim, block_size, channel, dataset, device, shape):
         super(FullQDisentangledVAE, self).__init__()
         self.z_dim = z_dim
         self.frames = frames
@@ -119,8 +119,8 @@ class FullQDisentangledVAE(nn.Module):
 
         self.z_w_function = nn.Linear(self.hidden_dim, self.block_size) #nn.Sequential(nn.Linear(self.hidden_dim, self.hidden_dim//2),nn.ReLU(), nn.Linear(self.hidden_dim//2, self.block_size))
         # observation encoder / decoder
-        self.enc_obs = Encoder(feat_size=self.hidden_dim, output_size=self.conv_dim, channel=channel)
-        self.dec_obs = Decoder(input_size=self.z_dim, feat_size=self.hidden_dim, channel=channel, dataset=dataset)
+        self.enc_obs = Encoder(feat_size=self.hidden_dim, output_size=self.conv_dim, channel=channel, shape=shape)
+        self.dec_obs = Decoder(input_size=self.z_dim, feat_size=self.hidden_dim, channel=channel, dataset=dataset, shape=shape)
 
     def reparameterize(self, mean, logvar, random_sampling=True):
         # Reparametrization occurs only if random sampling is set to true, otherwise mean is returned
@@ -523,18 +523,22 @@ if __name__ == '__main__':
         train_loader = torch.utils.data.DataLoader(sprite, batch_size=FLAGS.batch_size, shuffle=True, num_workers=4)
         test_loader = torch.utils.data.DataLoader(sprite_test, batch_size=1, shuffle=FLAGS, num_workers=4)
         channel = 3
+        shape = 64
     elif FLAGS.dset_name == 'moving_mnist':
         FLAGS.dset_path = os.path.join('./datasets', FLAGS.dset_name)
         train_loader, test_loader = data.get_data_loader(FLAGS, True)
         channel = 1
+        shape = 64
     elif FLAGS.dset_name == 'bouncing_balls':
         sprite = bouncing_balls('./bouncing_ball/dataset/', 6000)
         sprite_test = bouncing_balls('./bouncing_ball/dataset/', 300)
         train_loader = torch.utils.data.DataLoader(sprite, batch_size=FLAGS.batch_size, shuffle=True, num_workers=4)
         test_loader = torch.utils.data.DataLoader(sprite_test, batch_size=1, shuffle=True, num_workers=4)
         channel = 3
+        shape = 32
 
-    vae = FullQDisentangledVAE(temperature=FLAGS.temperature, frames=FLAGS.frame_size, z_dim=FLAGS.z_dim, hidden_dim=FLAGS.hidden_dim, conv_dim=FLAGS.conv_dim, block_size=FLAGS.block_size, channel=channel, dataset=FLAGS.dset_name, device=device)
+    vae = FullQDisentangledVAE(temperature=FLAGS.temperature, frames=FLAGS.frame_size, z_dim=FLAGS.z_dim, hidden_dim=FLAGS.hidden_dim,
+                               conv_dim=FLAGS.conv_dim, block_size=FLAGS.block_size, channel=channel, dataset=FLAGS.dset_name, device=device, shape=shape)
 
     starttime = datetime.datetime.now()
     now = datetime.datetime.now(dateutil.tz.tzlocal())
