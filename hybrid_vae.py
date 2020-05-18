@@ -45,11 +45,8 @@ class bouncing_balls(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         data = np.load(self.path + '/%d.npy' % (idx))
-        data = data.transpose((0,2,3,1))
-        transform = transforms.Compose([vtransforms.ToTensor()])
-        data = vtransforms.resize(data, size=(32,32),interpolation='bilinear')
-        data = transform(data)
-        return data
+
+        return torch.from_numpy(data)
 
 def sample_gumbel(shape, eps=1e-20):
     U = torch.rand(shape).to(device)
@@ -444,9 +441,8 @@ class Trainer(object):
             kl_loss = []
             kl0_loss = []
 
-            #if epoch > klstart:
-            #    self.kl_weight = min(self.kl_weight + (1. / kl_annealtime), 1.)
-            self.kl_weight = 1.0
+            if epoch > klstart:
+                self.kl_weight = min(self.kl_weight + (1. / kl_annealtime), 1.)
 
             write_log("Running Epoch : {}".format(epoch + 1), self.log_path)
             for i, data in enumerate(self.train):

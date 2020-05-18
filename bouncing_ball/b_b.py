@@ -102,8 +102,8 @@ class World:
 
     def __init__(self):
         self.index = index.Index()
-        self.width = 64
-        self.height = 64
+        self.width = 32
+        self.height = 32
         self.creatures = {}
 
     def add_creature(self, creature):
@@ -124,7 +124,7 @@ class World:
             creature.draw(screen)
 
     def random_creature(self):
-        radius = 6
+        radius = 4
         x = self.width // 2 - 2 * radius * np.random.normal(0, 1)
         if x>=self.width or x<=0:
             x = random.random() * self.width
