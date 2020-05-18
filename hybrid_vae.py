@@ -274,10 +274,10 @@ def loss_fn(dataset, original_seq, recon_seq, zt_1_mean, zt_1_lar,z_post_mean, z
 
     z_post_var = torch.exp(z_post_logvar)
     z_prior_var = torch.exp(z_prior_logvar)
+    #kld_z = 0.5 * torch.sum( z_prior_logvar - z_post_logvar + ((z_post_var + torch.pow(z_post_mean - z_prior_mean, 2)) / z_prior_var) - 1)
+    kld_z = 0.5 * torch.sum(z_post_logvar - z_prior_logvar + ((z_prior_var + torch.pow(z_prior_mean - z_post_mean, 2)) / z_post_var) - 1)
 
-    kld_z = 0.5 * torch.sum(
-        z_prior_logvar - z_post_logvar + ((z_post_var + torch.pow(z_post_mean - z_prior_mean, 2)) / z_prior_var) - 1)
-    return (obs_cost + kl_weight*(kld_z + kld_z0) )/batch_size ,kl_weight*( kld_z0)/batch_size,  kl_weight*(kld_z)/batch_size
+    return (obs_cost + kl_weight*(kld_z + kld_z0) + loss)/batch_size ,kl_weight*( kld_z0)/batch_size,  kl_weight*(kld_z)/batch_size
 
 
 class Trainer(object):
@@ -515,7 +515,7 @@ if __name__ == '__main__':
         train_loader, test_loader = data.get_data_loader(FLAGS, True)
         channel = 1
     elif FLAGS.dset_name == 'bouncing_balls':
-        sprite = bouncing_balls('./bouncing_ball/dataset/', 3000)
+        sprite = bouncing_balls('./bouncing_ball/dataset/', 1000)
         sprite_test = bouncing_balls('./bouncing_ball/dataset/', 300)
         train_loader = torch.utils.data.DataLoader(sprite, batch_size=FLAGS.batch_size, shuffle=True, num_workers=4)
         test_loader = torch.utils.data.DataLoader(sprite_test, batch_size=1, shuffle=True, num_workers=4)
