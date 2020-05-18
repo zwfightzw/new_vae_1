@@ -505,9 +505,9 @@ if __name__ == '__main__':
     parser.add_argument('--max-epochs', type=int, default=100)
     parser.add_argument('--gpu_id', type=int, default=1)
 
-    parser.add_argument('--alpha', type=float, default=2,
+    parser.add_argument('--alpha', type=float, default=0,
                         help='alpha L2 regularization on RNN activation (alpha = 0 means no regularization)')
-    parser.add_argument('--beta', type=float, default=1,
+    parser.add_argument('--beta', type=float, default=0,
                         help='beta slowness regularization applied on RNN activiation (beta = 0 means no regularization)')
     parser.add_argument('--kl_weight', type=float, default=0.0)
 
