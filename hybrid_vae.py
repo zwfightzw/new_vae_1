@@ -444,8 +444,9 @@ class Trainer(object):
             kl_loss = []
             kl0_loss = []
 
-            if epoch > klstart:
-                self.kl_weight = min(self.kl_weight + (1. / kl_annealtime), 1.)
+            #if epoch > klstart:
+            #    self.kl_weight = min(self.kl_weight + (1. / kl_annealtime), 1.)
+            self.kl_weight = 1.0
 
             write_log("Running Epoch : {}".format(epoch + 1), self.log_path)
             for i, data in enumerate(self.train):
