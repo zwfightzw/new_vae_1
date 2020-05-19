@@ -20,6 +20,19 @@ def write_log(log, log_path):
 def concat(*data_list):
     return torch.cat(data_list, 1)
 
+class bouncing_balls(torch.utils.data.Dataset):
+    def __init__(self, path, size):
+        self.path = path
+        self.length = size
+
+    def __len__(self):
+        return self.length
+
+    def __getitem__(self, idx):
+        data = np.load(self.path + '/%d.npy' % (idx))
+
+        return torch.from_numpy(data)
+
 class Sprites(torch.utils.data.Dataset):
     def __init__(self, path, size):
         self.path = path
@@ -33,7 +46,7 @@ class Sprites(torch.utils.data.Dataset):
 
 
 class FullQDisentangledVAE(nn.Module):
-    def __init__(self, frames, z_dim, conv_dim, hidden_dim, block_size, channel, dataset, device):
+    def __init__(self, frames, z_dim, conv_dim, hidden_dim, block_size, channel, shape,dataset, device):
         super(FullQDisentangledVAE, self).__init__()
         self.z_dim = z_dim
         self.frames = frames
@@ -54,8 +67,8 @@ class FullQDisentangledVAE(nn.Module):
             for i in range(self.block_size)]
 
         # observation encoder / decoder
-        self.enc_obs = Encoder(feat_size=self.hidden_dim, output_size=self.hidden_dim, channel=channel)
-        self.dec_obs = Decoder(input_size=self.z_dim, feat_size=self.hidden_dim, channel=channel, dataset=self.dataset)
+        self.enc_obs = Encoder(feat_size=self.hidden_dim, output_size=self.hidden_dim, channel=channel, shape=shape)
+        self.dec_obs = Decoder(input_size=self.z_dim, feat_size=self.hidden_dim, channel=channel, dataset=self.dataset, shape=shape)
 
     def reparameterize(self, mean, logvar, random_sampling=True):
         # Reparametrization occurs only if random sampling is set to true, otherwise mean is returned
@@ -291,14 +304,14 @@ class Trainer(object):
 
             zt_dec = torch.stack(zt_dec, dim=1)
             recon_x = self.model.dec_obs(zt_dec.view(len*self.model.frames,-1)).view(len, self.model.frames,-1)
-            recon_x = recon_x.view(len*x.shape[1], self.channel, 64, 64)
+            recon_x = recon_x.view(len*x.shape[1], self.channel, sample.shape[3], sample.shape[3])
             torchvision.utils.save_image(recon_x, '%s/epoch%d.png' % (self.sample_path, epoch))
 
     def recon_frame(self, epoch, original):
         with torch.no_grad():
             _, _, _, _, _, _,_, recon = self.model(original)
             image = torch.cat((original, recon), dim=0)
-            image = image.view(2*original.shape[1], self.channel, 64, 64)
+            image = image.view(2*original.shape[1], self.channel, original.shape[3], original.shape[3])
             torchvision.utils.save_image(image, '%s/epoch%d.png' % (self.recon_path, epoch))
 
     def train_model(self):
@@ -348,8 +361,8 @@ if __name__ == '__main__':
     # dataset
     parser.add_argument('--dset_name', type=str, default='bouncing_balls')  #moving_mnist, lpc, bouncing_balls
     # state size
-    parser.add_argument('--z-dim', type=int, default=72)  # 72 144
-    parser.add_argument('--hidden-dim', type=int, default=252) #  216 252
+    parser.add_argument('--z-dim', type=int, default=36)  # 72 144
+    parser.add_argument('--hidden-dim', type=int, default=216) #  216 252
     parser.add_argument('--conv-dim', type=int, default=256)  # 256 512
     parser.add_argument('--block_size', type=int, default=3) # 3  4
     # data size
@@ -370,22 +383,27 @@ if __name__ == '__main__':
     device = torch.device('cuda:%d'%(FLAGS.gpu_id) if torch.cuda.is_available() else 'cpu')
 
     if FLAGS.dset_name == 'lpc':
-        sprite = Sprites('./dataset/lpc-dataset/train/', 6687)
-        sprite_test = Sprites('./dataset/lpc-dataset/test/', 873)
+        sprite = Sprites('./dataset/lpc-dataset/train/', 6000)
+        sprite_test = Sprites('./dataset/lpc-dataset/test/', 300)
         train_loader = torch.utils.data.DataLoader(sprite, batch_size=FLAGS.batch_size, shuffle=True, num_workers=4)
         test_loader = torch.utils.data.DataLoader(sprite_test, batch_size=1, shuffle=FLAGS, num_workers=4)
         channel = 3
+        shape =64
     elif FLAGS.dset_name == 'moving_mnist':
         FLAGS.dset_path = os.path.join('./datasets', FLAGS.dset_name)
         train_loader, test_loader = data.get_data_loader(FLAGS, True)
         channel = 1
+        shape=64
     elif FLAGS.dset_name == 'bouncing_balls':
-        FLAGS.dset_path = os.path.join('./datasets', FLAGS.dset_name)
-        train_loader, test_loader = data.get_data_loader(FLAGS, True)
+        sprite = bouncing_balls('./bouncing_ball/dataset/', 6000)
+        sprite_test = bouncing_balls('./bouncing_ball/dataset/', 300)
+        train_loader = torch.utils.data.DataLoader(sprite, batch_size=FLAGS.batch_size, shuffle=True, num_workers=4)
+        test_loader = torch.utils.data.DataLoader(sprite_test, batch_size=1, shuffle=True, num_workers=4)
         channel = 3
+        shape = 32
 
 
-    vae = FullQDisentangledVAE(frames=FLAGS.frame_size, z_dim=FLAGS.z_dim, hidden_dim=FLAGS.hidden_dim, conv_dim=FLAGS.conv_dim, block_size=FLAGS.block_size,channel=channel, dataset=FLAGS.dset_name, device=device)
+    vae = FullQDisentangledVAE(frames=FLAGS.frame_size, z_dim=FLAGS.z_dim, hidden_dim=FLAGS.hidden_dim, conv_dim=FLAGS.conv_dim, block_size=FLAGS.block_size,channel=channel, shape=shape, dataset=FLAGS.dset_name, device=device)
     # set writer
     starttime = datetime.datetime.now()
     now = datetime.datetime.now(dateutil.tz.tzlocal())
