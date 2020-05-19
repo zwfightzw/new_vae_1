@@ -110,7 +110,8 @@ class FullQDisentangledVAE(nn.Module):
         self.temperature = temperature
         self.dropout = 0.25
 
-        self.z_lstm = nn.LSTM(self.conv_dim, self.hidden_dim // 2, 1, bidirectional=True, batch_first=True)
+        self.z_lstm = nn.GRU(self.hidden_dim, self.hidden_dim)
+        #self.z_lstm = nn.LSTM(self.conv_dim, self.hidden_dim // 2, 1, bidirectional=True, batch_first=True)
         # self.z_lstm = nn.LSTM(self.conv_dim, self.hidden_dim, 1, batch_first=True)
         # self.z_rnn = nn.RNN(self.hidden_dim, self.hidden_dim, batch_first=True)
         self.z_post_out = nn.Linear(self.hidden_dim, self.z_dim * 2)
@@ -124,7 +125,7 @@ class FullQDisentangledVAE(nn.Module):
         self.z_w_function = nn.Linear(self.hidden_dim,
                                       self.block_size)  # nn.Sequential(nn.Linear(self.hidden_dim, self.hidden_dim//2),nn.ReLU(), nn.Linear(self.hidden_dim//2, self.block_size))
         # observation encoder / decoder
-        self.enc_obs = Encoder(feat_size=self.hidden_dim, output_size=self.conv_dim, channel=channel, shape=shape)
+        self.enc_obs = Encoder(feat_size=self.hidden_dim, output_size=self.hidden_dim, channel=channel, shape=shape)
         self.dec_obs = Decoder(input_size=self.z_dim, feat_size=self.hidden_dim, channel=channel, dataset=dataset,
                                shape=shape)
 
@@ -352,7 +353,7 @@ class Trainer(object):
             x = self.model.enc_obs(sample.view(-1, *sample.size()[2:])).view(1, sample.shape[1], -1)
             lstm_out, _ = self.model.z_lstm(x)
             # lstm_out, _ = self.model.z_rnn(lstm_out)
-
+            print(lstm_out.shape)
             zt_1_post = self.model.z_post_out(lstm_out[:, 0])
             zt_1_mean = zt_1_post[:, :self.model.z_dim]
             zt_1_lar = zt_1_post[:, self.model.z_dim:]
