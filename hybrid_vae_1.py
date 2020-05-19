@@ -111,9 +111,9 @@ class FullQDisentangledVAE(nn.Module):
         self.dropout = 0.25
 
         self.z_lstm = nn.GRU(self.hidden_dim, self.hidden_dim)
-        #self.z_lstm = nn.LSTM(self.conv_dim, self.hidden_dim // 2, 1, bidirectional=True, batch_first=True)
-        # self.z_lstm = nn.LSTM(self.conv_dim, self.hidden_dim, 1, batch_first=True)
-        # self.z_rnn = nn.RNN(self.hidden_dim, self.hidden_dim, batch_first=True)
+        #self.z_lstm = nn.LSTM(self.hidden_dim, self.hidden_dim // 2, 1, bidirectional=True, batch_first=True)
+        # self.z_lstm = nn.LSTM(self.hidden_dim, self.hidden_dim, 1, batch_first=True)
+        #self.z_rnn = nn.RNN(self.hidden_dim, self.hidden_dim, batch_first=True)
         self.z_post_out = nn.Linear(self.hidden_dim, self.z_dim * 2)
 
         # self.z_prior_out_list = nn.Linear(self.hidden_dim,self.z_dim * 2)
