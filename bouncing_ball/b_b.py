@@ -8,11 +8,15 @@ import numpy as np
 import cv2
 
 def random_color():
-    hue = random.random()
-    lightness = random.random() * 0.3 + 0.5
-    saturation = random.random() * 0.2 + 0.7
-    return tuple(map(lambda f: int(f * 255), colorsys.hls_to_rgb(hue, lightness, saturation)))
+    #hue = random.random()
+    #lightness = random.random() * 0.3 + 0.5
+    #saturation = random.random() * 0.2 + 0.7
+    #print(tuple(map(lambda f: int(f * 255), colorsys.hls_to_rgb(hue, lightness, saturation))))
+    #return tuple(map(lambda f: int(f * 255), colorsys.hls_to_rgb(hue, lightness, saturation)))
 
+    color = [(255, 255,0),(255,0,255),(0,255,255),(0,0,255),(255,215,0),(255,192,203),(165,42,42),(160,32,240)]
+    rand_index = np.random.randint(0, 7)
+    return color[rand_index]
     #colorArr = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F']
     #color = ""
     #for i in range(6):

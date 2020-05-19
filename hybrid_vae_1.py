@@ -110,7 +110,7 @@ class FullQDisentangledVAE(nn.Module):
         self.temperature = temperature
         self.dropout = 0.25
 
-        self.z_lstm = nn.GRU(self.hidden_dim, self.hidden_dim)
+        self.z_lstm = GRUCell(input_size=self.hidden_dim, hidden_size=self.hidden_dim)
         #self.z_lstm = nn.LSTM(self.hidden_dim, self.hidden_dim // 2, 1, bidirectional=True, batch_first=True)
         # self.z_lstm = nn.LSTM(self.hidden_dim, self.hidden_dim, 1, batch_first=True)
         #self.z_rnn = nn.RNN(self.hidden_dim, self.hidden_dim, batch_first=True)
@@ -131,7 +131,7 @@ class FullQDisentangledVAE(nn.Module):
 
     def reparameterize(self, mean, logvar, random_sampling=True):
         # Reparametrization occurs only if random sampling is set to true, otherwise mean is returned
-        random_sampling = True
+        #random_sampling = True
         if random_sampling is True:
             eps = torch.randn_like(logvar)
             std = torch.exp(0.5 * logvar)
@@ -144,7 +144,12 @@ class FullQDisentangledVAE(nn.Module):
         batch_size = x.shape[0]
         seq_size = x.shape[1]
 
-        lstm_out, _ = self.z_lstm(x)
+        #lstm_out, _ = self.z_lstm(x)
+        lstm_out = x.new_zeros(batch_size, seq_size, self.hidden_dim)
+        z_fwd_post = torch.zeros(batch_size, self.hidden_dim).to(self.device)
+        for i in range(seq_size):
+            z_fwd_post= self.z_lstm(x[:,i],z_fwd_post)
+            lstm_out[:, i] = z_fwd_post
         # lstm_out, _ = self.z_rnn(lstm_out)
         each_block_size = self.hidden_dim // self.block_size
 
@@ -351,7 +356,13 @@ class Trainer(object):
             len = sample.shape[0]
             # len = self.samples
             x = self.model.enc_obs(sample.view(-1, *sample.size()[2:])).view(1, sample.shape[1], -1)
-            lstm_out, _ = self.model.z_lstm(x)
+            lstm_out = x.new_zeros(len, self.model.frames, self.model.hidden_dim)
+            z_fwd_post = torch.zeros(len, self.model.hidden_dim).to(self.device)
+            for i in range(self.model.frames):
+                z_fwd_post = self.model.z_lstm(x[:, i], z_fwd_post)
+                lstm_out[:, i] = z_fwd_post
+
+            #lstm_out, _ = self.model.z_lstm(x)
             # lstm_out, _ = self.model.z_rnn(lstm_out)
             print(lstm_out.shape)
             zt_1_post = self.model.z_post_out(lstm_out[:, 0])
