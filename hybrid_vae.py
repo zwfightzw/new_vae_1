@@ -103,9 +103,9 @@ class FullQDisentangledVAE(nn.Module):
         self.temperature = temperature
         self.dropout = 0.25
 
-        self.z_lstm = nn.LSTM(self.conv_dim, self.hidden_dim, 1, bidirectional=True, batch_first=True)
+        self.z_lstm = nn.LSTM(self.conv_dim, self.hidden_dim//2, 1, bidirectional=True, batch_first=True)
         #self.z_lstm = nn.LSTM(self.conv_dim, self.hidden_dim, 1, batch_first=True)
-        self.z_rnn = nn.RNN(self.hidden_dim *2, self.hidden_dim, batch_first=True)
+        #self.z_rnn = nn.RNN(self.hidden_dim, self.hidden_dim, batch_first=True)
         self.z_post_out = nn.Linear(self.hidden_dim, self.z_dim * 2)
 
         #self.z_prior_out_list = nn.Linear(self.hidden_dim,self.z_dim * 2)
@@ -134,7 +134,7 @@ class FullQDisentangledVAE(nn.Module):
         seq_size = x.shape[1]
 
         lstm_out, _ = self.z_lstm(x)
-        lstm_out, _ = self.z_rnn(lstm_out)
+        #lstm_out, _ = self.z_rnn(lstm_out)
         each_block_size = self.z_dim//self.block_size
 
         z_post_mean_list = []
@@ -337,7 +337,7 @@ class Trainer(object):
             #len = self.samples
             x = self.model.enc_obs(sample.view(-1, *sample.size()[2:])).view(1, sample.shape[1], -1)
             lstm_out, _ = self.model.z_lstm(x)
-            lstm_out, _ = self.model.z_rnn(lstm_out)
+            #lstm_out, _ = self.model.z_rnn(lstm_out)
 
             zt_1_post = self.model.z_post_out(lstm_out[:, 0])
             zt_1_mean = zt_1_post[:, :self.model.z_dim]
@@ -485,10 +485,10 @@ if __name__ == '__main__':
     # method
     parser.add_argument('--method', type=str, default='Hybrid')
     # dataset
-    parser.add_argument('--dset_name', type=str, default='lpc')  #moving_mnist, lpc, bouncing_balls
+    parser.add_argument('--dset_name', type=str, default='bouncing_balls')  #moving_mnist, lpc, bouncing_balls
     # state size
-    parser.add_argument('--z-dim', type=int, default=144)  # 72 144
-    parser.add_argument('--hidden-dim', type=int, default=252) #  216 252
+    parser.add_argument('--z-dim', type=int, default=36)  # 72 144
+    parser.add_argument('--hidden-dim', type=int, default=216) #  216 252
     parser.add_argument('--conv-dim', type=int, default=256)  # 256 512
     parser.add_argument('--block_size', type=int, default=3) # 3  4
     # data size
@@ -507,7 +507,7 @@ if __name__ == '__main__':
                         help='alpha L2 regularization on RNN activation (alpha = 0 means no regularization)')
     parser.add_argument('--beta', type=float, default=0,
                         help='beta slowness regularization applied on RNN activiation (beta = 0 means no regularization)')
-    parser.add_argument('--kl_weight', type=float, default=0.0)
+    parser.add_argument('--kl_weight', type=float, default=1.0)
 
 
     FLAGS = parser.parse_args()
