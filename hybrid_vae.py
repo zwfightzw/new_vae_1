@@ -253,6 +253,12 @@ class FullQDisentangledVAE(nn.Module):
 
 def loss_fn(dataset, original_seq, recon_seq, zt_1_mean, zt_1_lar,z_post_mean, z_post_logvar, z_prior_mean, z_prior_logvar, raw_outputs, outputs, alpha, beta, kl_weight):
 
+    print(recon_seq.dtype)
+    print(original_seq.dtype)
+    print((recon_seq>1).any())
+    print((recon_seq<0).any())
+    print((original_seq>1).any())
+    print((original_seq<0).any())
     if dataset == 'lpc':
         obs_cost = F.mse_loss(recon_seq,original_seq, size_average=False)
     elif dataset == 'moving_mnist' or dataset == 'bouncing_balls':
