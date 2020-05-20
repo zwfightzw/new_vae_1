@@ -396,19 +396,27 @@ class Trainer(object):
             #zt_1_lar = zt_1_post[:, self.model.z_dim:]
 
             #zt_1 = self.model.reparameterize(zt_1_mean, zt_1_lar, self.model.training)
-            zt_1 = [Normal(torch.zeros(self.model.z_dim).to(self.device), torch.ones(self.model.z_dim).to(self.device)).rsample() for i in range(len)]
-            zt_1 = torch.stack(zt_1, dim=0)
+            #zt_1 = [Normal(torch.zeros(self.model.z_dim).to(self.device), torch.ones(self.model.z_dim).to(self.device)).rsample() for i in range(len)]
+            #zt_1 = torch.stack(zt_1, dim=0)
 
             #hidden_zt = lstm_out[:, 0]
-            hidden_zt = Normal(torch.zeros(len, self.model.hidden_dim).to(self.device), torch.ones(len, self.model.hidden_dim).to(self.device)).rsample()
             # init wt
             wt = torch.ones(len, self.model.block_size).to(self.device)
             '''
             store_wt.append(wt[0].detach().cpu().numpy())
             '''
             store_wt = []
-            z_fwd_list = [torch.zeros(len, self.model.hidden_dim).to(self.device) for i in range(self.model.block_size)]
-            z_fwd_all = torch.zeros(len, self.model.hidden_dim).to(self.device)
+            z_fwd_list = [Normal(torch.zeros(len, self.model.hidden_dim).to(self.device),
+                                 torch.ones(len, self.model.hidden_dim).to(self.device)).rsample() for i in
+                          range(self.model.block_size)]
+            z_fwd_all = torch.stack(z_fwd_list, dim=2).mean(dim=2).view(len, self.model.hidden_dim)
+            hidden_zt = z_fwd_all
+            # zt_obs = concat(z_fwd_all, post_z_1)
+
+            z_prior_fwd = self.model.z_prior_out_list(z_fwd_all)
+            z_fwd_latent_mean = z_prior_fwd[:, :self.model.z_dim]
+            z_fwd_latent_lar = z_prior_fwd[:, self.model.z_dim:]
+            zt_1 = self.model.reparameterize(z_fwd_latent_mean, z_fwd_latent_lar, self.model.training)
             #zt_obs = concat(z_fwd_all, zt_1)
             zt_dec.append(zt_1)
             for t in range(1, self.model.frames):
