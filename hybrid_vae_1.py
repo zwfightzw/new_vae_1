@@ -512,8 +512,7 @@ class Trainer(object):
             kl0loss = np.mean(kl0_loss)
             kldfwdloss = np.mean(kld_fwd_loss)
             self.epoch_losses.append((meanloss, klloss))
-            write_log(
-                "Epoch {} : Average Loss: {}, KL0 loss :{}, KL loss :{}, kl fwd loss :{}".format(epoch + 1, meanloss, kl0loss, klloss, kldfwdloss),
+            write_log("Epoch {} : Average Loss: {}, KL0 loss :{}, KL loss :{}, kl fwd loss :{}".format(epoch + 1, meanloss, kl0loss, klloss, kldfwdloss),
                 self.log_path)
             # self.save_checkpoint(epoch)
             self.model.eval()

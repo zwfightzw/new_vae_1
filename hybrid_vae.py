@@ -231,7 +231,7 @@ class FullQDisentangledVAE(nn.Module):
         z_prior_mean_list = torch.stack(z_prior_mean_list, dim=1)
         z_prior_lar_list = torch.stack(z_prior_lar_list, dim=1)
 
-        return zt_1_mean, zt_1_lar, z_post_mean_list, z_post_lar_list, z_prior_mean_list, z_prior_lar_list, zt_obs_list, store_wt, raw_outputs, outputs
+        return zt_1_mean, zt_1_lar, z_post_mean_list, z_post_lar_list, z_prior_mean_list, z_prior_lar_list, zt_obs_list, store_wt, raw_outputs, outputs, lstm_out[:,0:seq_size-1]
 
     def cumsoftmax(self, x, temp=0.5, dim=-1):
         #if self.training:
@@ -247,11 +247,11 @@ class FullQDisentangledVAE(nn.Module):
         num_samples = x.shape[0]
         seq_len = x.shape[1]
         conv_x = self.enc_obs(x.view(-1, *x.size()[2:])).view(num_samples, seq_len, -1)
-        zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, z, store_wt, raw_outputs, outputs  = self.encode_z(conv_x)
+        zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, z, store_wt, raw_outputs, outputs, lstm_out = self.encode_z(conv_x)
         recon_x = self.dec_obs(z.view(num_samples * seq_len, -1)).view(num_samples, seq_len, *x.size()[2:])
-        return zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, z, recon_x, store_wt, raw_outputs, outputs
+        return zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, z, recon_x, store_wt, raw_outputs, outputs, lstm_out
 
-def loss_fn(dataset, original_seq, recon_seq, zt_1_mean, zt_1_lar,z_post_mean, z_post_logvar, z_prior_mean, z_prior_logvar, raw_outputs, outputs, alpha, beta, kl_weight):
+def loss_fn(dataset, original_seq, recon_seq, zt_1_mean, zt_1_lar,z_post_mean, z_post_logvar, z_prior_mean, z_prior_logvar, raw_outputs, outputs, alpha, beta, kl_weight, lstm_out):
 
     if dataset == 'lpc':
         obs_cost = F.mse_loss(recon_seq,original_seq, size_average=False)
@@ -275,11 +275,13 @@ def loss_fn(dataset, original_seq, recon_seq, zt_1_mean, zt_1_lar,z_post_mean, z
             for rnn_h in raw_outputs[-1:]
         )
 
+    kl_fwd = (raw_outputs[0].view((lstm_out.shape)) - lstm_out).pow(2).sum()
+
     z_post_var = torch.exp(z_post_logvar)
     z_prior_var = torch.exp(z_prior_logvar)
     kld_z = 0.5 * torch.sum( z_prior_logvar - z_post_logvar + ((z_post_var + torch.pow(z_post_mean - z_prior_mean, 2)) / z_prior_var) - 1)
 
-    return (obs_cost + kl_weight*(kld_z + kld_z0) + loss)/batch_size ,kl_weight*( kld_z0)/batch_size,  kl_weight*(kld_z)/batch_size
+    return (obs_cost + kl_weight*(kld_z + kld_z0 + kl_fwd) + loss)/batch_size ,kl_weight*( kld_z0)/batch_size,  kl_weight*(kld_z)/batch_size, kl_weight* kl_fwd/batch_size
 
 
 class Trainer(object):
@@ -414,7 +416,7 @@ class Trainer(object):
 
     def recon_frame(self, epoch, original):
         with torch.no_grad():
-            _, _, _, _, _, _,_, recon, store_wt, _, _= self.model(original, 1.0)
+            _, _, _, _, _, _,_, recon, store_wt, _, _, _= self.model(original, 1.0)
             image = torch.cat((original, recon), dim=0)
             print(image.shape)
             image = image.view(2*original.shape[1], channel, self.shape, self.shape)
@@ -442,6 +444,7 @@ class Trainer(object):
             losses = []
             kl_loss = []
             kl0_loss = []
+            kld_fwd_loss = []
 
             if epoch > klstart:
                 self.kl_weight = min(self.kl_weight + (1. / kl_annealtime), 1.)
@@ -450,22 +453,25 @@ class Trainer(object):
             for i, data in enumerate(self.train):
                 data = data.to(self.device)
                 self.optimizer.zero_grad()
-                zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, z, recon_x,_ , raw_outputs, outputs= self.model(data, temp)
-                loss, kld_z0, kld_z = loss_fn(self.model.dataset, data, recon_x, zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, raw_outputs, outputs, self.alpha, self.beta, self.kl_weight)
-                write_log('mse loss is %f, kl0 loss is %f, kl loss is %f'%(loss, kld_z0, kld_z), self.log_path)
-                print('index is %d, mse loss is %f, kl0 loss is %f, kl loss is %f'%(i, loss, kld_z0, kld_z))
+                zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, z, recon_x,_ , raw_outputs, outputs, lstm_out= self.model(data, temp)
+                loss, kld_z0, kld_z, kld_fwd = loss_fn(self.model.dataset, data, recon_x, zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, raw_outputs, outputs, self.alpha, self.beta, self.kl_weight, lstm_out)
+                write_log('mse loss is %f, kl0 loss is %f, kl loss is %f, kl fwd loss is %f' % (loss, kld_z0, kld_z, kld_fwd), self.log_path)
+                print('index is %d, mse loss is %f, kl0 loss is %f, kl loss is %f, kl fwd loss is %f' % (i, loss, kld_z0, kld_z, kld_fwd))
                 if self.grad_clip > 0.0:
                     nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
                 loss.backward()
                 self.optimizer.step()
                 kl_loss.append(kld_z.item())
                 kl0_loss.append(kld_z0.item())
+                kld_fwd_loss.append(kld_fwd.item())
                 losses.append(loss.item())
             meanloss = np.mean(losses)
             klloss = np.mean(kl_loss)
             kl0loss = np.mean(kl0_loss)
-            self.epoch_losses.append((meanloss,klloss))
-            write_log("Epoch {} : Average Loss: {}, KL0 loss :{}, KL loss :{}".format(epoch + 1, meanloss, kl0loss,klloss), self.log_path)
+            kldfwdloss = np.mean(kld_fwd_loss)
+            self.epoch_losses.append((meanloss, klloss))
+            write_log("Epoch {} : Average Loss: {}, KL0 loss :{}, KL loss :{}, kl fwd loss :{}".format(epoch + 1, meanloss, kl0loss, klloss, kldfwdloss),
+                self.log_path)
             #self.save_checkpoint(epoch)
             self.model.eval()
             sample = iter(self.test).next().to(self.device)
