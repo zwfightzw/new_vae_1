@@ -176,8 +176,8 @@ class FullQDisentangledVAE(nn.Module):
         store_wt.append(wt[0].detach().cpu().numpy())
         zt_obs_list.append(post_z_1)
 
-        curr_layer = [None] * (seq_size)
-        curr_layer[0] = Normal(torch.zeros(batch_size, self.hidden_dim).to(self.device), torch.ones(batch_size, self.hidden_dim).to(self.device)).rsample()
+        curr_layer = [None] * (seq_size - 1)
+        curr_fwd = [None] * (seq_size - 1)
 
         for t in range(1, seq_size):
 
@@ -218,7 +218,7 @@ class FullQDisentangledVAE(nn.Module):
                 z_fwd_list[fwd_t] = self.z_to_c_fwd_list[fwd_t](zt_1_tmp, z_fwd_list[fwd_t], w=wt[:, fwd_t].view(-1, 1))
 
             z_fwd_all = torch.stack(z_fwd_list, dim=2).mean(dim=2).view(batch_size, self.hidden_dim)  # .mean(dim=2)
-            curr_layer[t] = z_fwd_all
+            curr_layer[t - 1] = z_fwd_all
             # p(xt|zt)
             # zt_obs = concat(z_fwd_all, z_post_sample)
             zt_obs_list.append(z_post_sample)
@@ -252,10 +252,12 @@ class FullQDisentangledVAE(nn.Module):
         z_prior_mean_list = torch.stack(z_prior_mean_list, dim=1)
         z_prior_lar_list = torch.stack(z_prior_lar_list, dim=1)
 
-        return zt_1_mean, zt_1_lar, z_post_mean_list, z_post_lar_list, z_prior_mean_list, z_prior_lar_list, zt_obs_list, store_wt, raw_outputs, outputs, lstm_out
+        return zt_1_mean, zt_1_lar, z_post_mean_list, z_post_lar_list, z_prior_mean_list, z_prior_lar_list, zt_obs_list, store_wt, raw_outputs, outputs, lstm_out[
+                                                                                                                                                         :,
+                                                                                                                                                         0:seq_size - 1]
 
     def cumsoftmax(self, x, temp=0.5, dim=-1):
-        # if self.training:
+        #if self.training:
         #    x = x + sample_gumbel(x.size())
         x = F.softmax(x, dim=dim)
         # x = torch.log(x)/temp
@@ -367,7 +369,7 @@ class Trainer(object):
             zt_dec = []
             len = sample.shape[0]
             # len = self.samples
-            #x = self.model.enc_obs(sample.view(-1, *sample.size()[2:])).view(1, sample.shape[1], -1)
+            x = self.model.enc_obs(sample.view(-1, *sample.size()[2:])).view(1, sample.shape[1], -1)
             '''
             lstm_out = x.new_zeros(len, self.model.frames, self.model.hidden_dim)
             z_fwd_post = torch.zeros(len, self.model.hidden_dim).to(self.device)
@@ -382,12 +384,17 @@ class Trainer(object):
             #zt_1_mean = zt_1_post[:, :self.model.z_dim]
             #zt_1_lar = zt_1_post[:, self.model.z_dim:]
 
-            #zt_1 = self.model.reparameterize(zt_1_mean, zt_1_lar, self.model.training)
             zt_1 = [Normal(torch.zeros(self.model.z_dim).to(self.device), torch.ones(self.model.z_dim).to(self.device)).rsample() for i in range(len)]
             zt_1 = torch.stack(zt_1, dim=0)
 
             #hidden_zt = lstm_out[:, 0]
             hidden_zt = Normal(torch.zeros(len, self.model.hidden_dim).to(self.device), torch.ones(len, self.model.hidden_dim).to(self.device)).rsample()
+
+            #zt_1 = self.model.reparameterize(zt_1_mean, zt_1_lar, self.model.training)
+            # zt_1 = [Normal(torch.zeros(self.model.z_dim).to(self.device), torch.ones(self.model.z_dim).to(self.device)).rsample() for i in range(len)]
+            # zt_1 = torch.stack(zt_1, dim=0)
+
+            #hidden_zt = lstm_out[:, 0]
             # init wt
             wt = torch.ones(len, self.model.block_size).to(self.device)
             '''
@@ -451,7 +458,7 @@ class Trainer(object):
 
             zt_dec = torch.stack(zt_dec, dim=1)
             recon_x = self.model.dec_obs(zt_dec.view(len * self.model.frames, -1)).view(len, self.model.frames, -1)
-            recon_x = recon_x.view(len * sample.shape[1], self.channel, self.shape, self.shape)
+            recon_x = recon_x.view(len * x.shape[1], self.channel, self.shape, self.shape)
             torchvision.utils.save_image(recon_x, '%s/epoch%d.png' % (self.sample_path, epoch))
             return store_wt
 
@@ -540,7 +547,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="hybrid_vae")
     parser.add_argument('--seed', type=int, default=111)
     # method
-    parser.add_argument('--method', type=str, default='Hybrid_1')
+    parser.add_argument('--method', type=str, default='Hybrid_1_1')
     # dataset
     parser.add_argument('--dset_name', type=str, default='bouncing_balls')  # moving_mnist, lpc, bouncing_balls
     # state size
