@@ -103,7 +103,7 @@ class FullQDisentangledVAE(nn.Module):
         self.temperature = temperature
         self.dropout = 0.25
 
-        self.z_lstm = nn.LSTM(self.conv_dim, self.hidden_dim//2, 1, bidirectional=True, batch_first=True)
+        self.z_lstm = nn.LSTM(self.hidden_dim, self.hidden_dim//2, 1, bidirectional=True, batch_first=True)
         #self.z_lstm = nn.LSTM(self.conv_dim, self.hidden_dim, 1, batch_first=True)
         #self.z_rnn = nn.RNN(self.hidden_dim, self.hidden_dim, batch_first=True)
         self.z_post_out = nn.Linear(self.hidden_dim, self.z_dim * 2)
@@ -116,7 +116,7 @@ class FullQDisentangledVAE(nn.Module):
 
         self.z_w_function = nn.Linear(self.hidden_dim, self.block_size) #nn.Sequential(nn.Linear(self.hidden_dim, self.hidden_dim//2),nn.ReLU(), nn.Linear(self.hidden_dim//2, self.block_size))
         # observation encoder / decoder
-        self.enc_obs = Encoder(feat_size=self.hidden_dim, output_size=self.conv_dim, channel=channel, shape=shape)
+        self.enc_obs = Encoder(feat_size=self.hidden_dim, output_size=self.hidden_dim, channel=channel, shape=shape)
         self.dec_obs = Decoder(input_size=self.z_dim, feat_size=self.hidden_dim, channel=channel, dataset=dataset, shape=shape)
 
     def reparameterize(self, mean, logvar, random_sampling=True):
@@ -253,12 +253,6 @@ class FullQDisentangledVAE(nn.Module):
 
 def loss_fn(dataset, original_seq, recon_seq, zt_1_mean, zt_1_lar,z_post_mean, z_post_logvar, z_prior_mean, z_prior_logvar, raw_outputs, outputs, alpha, beta, kl_weight):
 
-    print(recon_seq.dtype)
-    print(original_seq.dtype)
-    print((recon_seq>1).any())
-    print((recon_seq<0).any())
-    print((original_seq>1).any())
-    print((original_seq<0).any())
     if dataset == 'lpc':
         obs_cost = F.mse_loss(recon_seq,original_seq, size_average=False)
     elif dataset == 'moving_mnist' or dataset == 'bouncing_balls':
