@@ -239,6 +239,7 @@ class FullQDisentangledVAE(nn.Module):
 
         prev_layer = torch.stack(curr_layer)
         raw_outputs.append(prev_layer)
+        #
         prev_layer = self.lockdrop(prev_layer, self.dropout)
         outputs.append(prev_layer)
 

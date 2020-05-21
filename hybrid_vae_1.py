@@ -243,7 +243,7 @@ class FullQDisentangledVAE(nn.Module):
 
         prev_layer = torch.stack(curr_layer)
         raw_outputs.append(prev_layer)
-        prev_layer = self.lockdrop(prev_layer, self.dropout)
+        #prev_layer = self.lockdrop(prev_layer, self.dropout)
         outputs.append(prev_layer)
 
         zt_obs_list = torch.stack(zt_obs_list, dim=1)
@@ -255,8 +255,8 @@ class FullQDisentangledVAE(nn.Module):
         return zt_1_mean, zt_1_lar, z_post_mean_list, z_post_lar_list, z_prior_mean_list, z_prior_lar_list, zt_obs_list, store_wt, raw_outputs, outputs, lstm_out
 
     def cumsoftmax(self, x, temp=0.5, dim=-1):
-        # if self.training:
-        #    x = x + sample_gumbel(x.size())
+        if self.training:
+            x = x + sample_gumbel(x.size())
         x = F.softmax(x, dim=dim)
         # x = torch.log(x)/temp
         # x = torch.exp(x)
