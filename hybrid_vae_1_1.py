@@ -377,24 +377,24 @@ class Trainer(object):
                 z_fwd_post = self.model.z_lstm(x[:, i], z_fwd_post)
                 lstm_out[:, i] = z_fwd_post
             '''
-            #lstm_out, _ = self.model.z_lstm(x)
+            lstm_out, _ = self.model.z_lstm(x)
             # lstm_out, _ = self.model.z_rnn(lstm_out)
 
-            #zt_1_post = self.model.z_post_out(lstm_out[:, 0])
-            #zt_1_mean = zt_1_post[:, :self.model.z_dim]
-            #zt_1_lar = zt_1_post[:, self.model.z_dim:]
+            zt_1_post = self.model.z_post_out(lstm_out[:, 0])
+            zt_1_mean = zt_1_post[:, :self.model.z_dim]
+            zt_1_lar = zt_1_post[:, self.model.z_dim:]
 
-            zt_1 = [Normal(torch.zeros(self.model.z_dim).to(self.device), torch.ones(self.model.z_dim).to(self.device)).rsample() for i in range(len)]
-            zt_1 = torch.stack(zt_1, dim=0)
+            #zt_1 = [Normal(torch.zeros(self.model.z_dim).to(self.device), torch.ones(self.model.z_dim).to(self.device)).rsample() for i in range(len)]
+            #zt_1 = torch.stack(zt_1, dim=0)
 
             #hidden_zt = lstm_out[:, 0]
             hidden_zt = Normal(torch.zeros(len, self.model.hidden_dim).to(self.device), torch.ones(len, self.model.hidden_dim).to(self.device)).rsample()
 
-            #zt_1 = self.model.reparameterize(zt_1_mean, zt_1_lar, self.model.training)
+            zt_1 = self.model.reparameterize(zt_1_mean, zt_1_lar, self.model.training)
             # zt_1 = [Normal(torch.zeros(self.model.z_dim).to(self.device), torch.ones(self.model.z_dim).to(self.device)).rsample() for i in range(len)]
             # zt_1 = torch.stack(zt_1, dim=0)
 
-            #hidden_zt = lstm_out[:, 0]
+            hidden_zt = lstm_out[:, 0]
             # init wt
             wt = torch.ones(len, self.model.block_size).to(self.device)
             '''
