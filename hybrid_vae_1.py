@@ -255,8 +255,8 @@ class FullQDisentangledVAE(nn.Module):
         return zt_1_mean, zt_1_lar, z_post_mean_list, z_post_lar_list, z_prior_mean_list, z_prior_lar_list, zt_obs_list, store_wt, raw_outputs, outputs, lstm_out
 
     def cumsoftmax(self, x, temp=0.5, dim=-1):
-        #if self.training:
-        #    x = x + sample_gumbel(x.size())
+        if self.training:
+            x = x + sample_gumbel(x.size())
         x = F.softmax(x, dim=dim)
         # x = torch.log(x)/temp
         # x = torch.exp(x)
