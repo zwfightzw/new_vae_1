@@ -121,6 +121,7 @@ class FullQDisentangledVAE(nn.Module):
 
     def reparameterize(self, mean, logvar, random_sampling=True):
         # Reparametrization occurs only if random sampling is set to true, otherwise mean is returned
+        random_sampling = True
         if random_sampling is True:
             eps = torch.randn_like(logvar)
             std = torch.exp(0.5 * logvar)
@@ -222,7 +223,7 @@ class FullQDisentangledVAE(nn.Module):
 
         prev_layer = torch.stack(curr_layer)
         raw_outputs.append(prev_layer)
-        prev_layer = self.lockdrop(prev_layer, self.dropout)
+        #prev_layer = self.lockdrop(prev_layer, self.dropout)
         outputs.append(prev_layer)
 
         zt_obs_list = torch.stack(zt_obs_list, dim=1)
@@ -234,8 +235,8 @@ class FullQDisentangledVAE(nn.Module):
         return zt_1_mean, zt_1_lar, z_post_mean_list, z_post_lar_list, z_prior_mean_list, z_prior_lar_list, zt_obs_list, store_wt, raw_outputs, outputs, lstm_out[:,0:seq_size-1]
 
     def cumsoftmax(self, x, temp=0.5, dim=-1):
-        #if self.training:
-        #    x = x + sample_gumbel(x.size())
+        if self.training:
+            x = x + sample_gumbel(x.size())
         x = F.softmax(x, dim=dim)
         # x = torch.log(x)/temp
         # x = torch.exp(x)
@@ -270,10 +271,7 @@ def loss_fn(dataset, original_seq, recon_seq, zt_1_mean, zt_1_lar,z_post_mean, z
         )
     # Temporal Activation Regularization (slowness)
     if beta:
-        loss = loss + sum(
-            beta * (rnn_h[1:] - rnn_h[:-1]).pow(2).sum()
-            for rnn_h in raw_outputs[-1:]
-        )
+        loss = loss + sum( beta * (rnn_h[1:] - rnn_h[:-1]).pow(2).sum() for rnn_h in raw_outputs[-1:])
 
     kl_fwd = (raw_outputs[0].view((lstm_out.shape)) - lstm_out).pow(2).sum()
 
@@ -341,13 +339,16 @@ class Trainer(object):
             lstm_out, _ = self.model.z_lstm(x)
             #lstm_out, _ = self.model.z_rnn(lstm_out)
 
-            zt_1_post = self.model.z_post_out(lstm_out[:, 0])
-            zt_1_mean = zt_1_post[:, :self.model.z_dim]
-            zt_1_lar = zt_1_post[:, self.model.z_dim:]
+            #zt_1_post = self.model.z_post_out(lstm_out[:, 0])
+            #zt_1_mean = zt_1_post[:, :self.model.z_dim]
+            #zt_1_lar = zt_1_post[:, self.model.z_dim:]
 
-            zt_1 = self.model.reparameterize(zt_1_mean, zt_1_lar, self.model.training)
+            #zt_1 = self.model.reparameterize(zt_1_mean, zt_1_lar, self.model.training)
             #zt_1 = [Normal(torch.zeros(self.model.z_dim).to(self.device), torch.ones(self.model.z_dim).to(self.device)).rsample() for i in range(len)]
             #zt_1 = torch.stack(zt_1, dim=0)
+
+            zt_1 = [Normal(torch.zeros(self.model.z_dim).to(self.device), torch.ones(self.model.z_dim).to(self.device)).rsample() for i in range(len)]
+            zt_1 = torch.stack(zt_1, dim=0)
 
             # init wt
             wt = torch.ones(len, self.model.block_size).to(self.device)
