@@ -177,7 +177,7 @@ class FullQDisentangledVAE(nn.Module):
         zt_obs_list.append(post_z_1)
 
         curr_layer = [None] * (seq_size)
-        curr_layer[0] = Normal(torch.zeros(batch_size, self.hidden_dim).to(self.device), torch.ones(batch_size, self.hidden_dim).to(self.device)).rsample()
+        curr_layer[0] = torch.zeros(batch_size, self.hidden_dim).to(self.device)
 
         for t in range(1, seq_size):
 
