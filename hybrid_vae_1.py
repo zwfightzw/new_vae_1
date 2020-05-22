@@ -303,6 +303,8 @@ def loss_fn(dataset, original_seq, recon_seq, zt_1_mean, zt_1_lar, z_post_mean, 
         )
 
     kl_fwd = (raw_outputs[0].view((lstm_out.shape)) - lstm_out).pow(2).sum() * eta
+    kl_fwd += raw_outputs[0].pow(2).sum() *eta
+    kl_fwd += lstm_out.pow(2).sum() *eta
 
     z_post_var = torch.exp(z_post_logvar)
     z_prior_var = torch.exp(z_prior_logvar)
