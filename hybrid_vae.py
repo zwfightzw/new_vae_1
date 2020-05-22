@@ -121,7 +121,7 @@ class FullQDisentangledVAE(nn.Module):
 
     def reparameterize(self, mean, logvar, random_sampling=True):
         # Reparametrization occurs only if random sampling is set to true, otherwise mean is returned
-        random_sampling = True
+        #random_sampling = True
         if random_sampling is True:
             eps = torch.randn_like(logvar)
             std = torch.exp(0.5 * logvar)
@@ -235,8 +235,8 @@ class FullQDisentangledVAE(nn.Module):
         return zt_1_mean, zt_1_lar, z_post_mean_list, z_post_lar_list, z_prior_mean_list, z_prior_lar_list, zt_obs_list, store_wt, raw_outputs, outputs, lstm_out[:,0:seq_size-1]
 
     def cumsoftmax(self, x, temp=0.5, dim=-1):
-        if self.training:
-            x = x + sample_gumbel(x.size())
+        #if self.training:
+        #    x = x + sample_gumbel(x.size())
         x = F.softmax(x, dim=dim)
         # x = torch.log(x)/temp
         # x = torch.exp(x)
@@ -252,7 +252,7 @@ class FullQDisentangledVAE(nn.Module):
         recon_x = self.dec_obs(z.view(num_samples * seq_len, -1)).view(num_samples, seq_len, *x.size()[2:])
         return zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, z, recon_x, store_wt, raw_outputs, outputs, lstm_out
 
-def loss_fn(dataset, original_seq, recon_seq, zt_1_mean, zt_1_lar,z_post_mean, z_post_logvar, z_prior_mean, z_prior_logvar, raw_outputs, outputs, alpha, beta, kl_weight, lstm_out):
+def loss_fn(dataset, original_seq, recon_seq, zt_1_mean, zt_1_lar,z_post_mean, z_post_logvar, z_prior_mean, z_prior_logvar, raw_outputs, outputs, alpha, beta, kl_weight, lstm_out, eta):
 
     if dataset == 'lpc':
         obs_cost = F.mse_loss(recon_seq,original_seq, size_average=False)
@@ -273,7 +273,7 @@ def loss_fn(dataset, original_seq, recon_seq, zt_1_mean, zt_1_lar,z_post_mean, z
     if beta:
         loss = loss + sum( beta * (rnn_h[1:] - rnn_h[:-1]).pow(2).sum() for rnn_h in raw_outputs[-1:])
 
-    kl_fwd = (raw_outputs[0].view((lstm_out.shape)) - lstm_out).pow(2).sum()
+    kl_fwd = (raw_outputs[0].view((lstm_out.shape)) - lstm_out).pow(2).sum() * eta
 
     z_post_var = torch.exp(z_post_logvar)
     z_prior_var = torch.exp(z_prior_logvar)
@@ -284,7 +284,7 @@ def loss_fn(dataset, original_seq, recon_seq, zt_1_mean, zt_1_lar,z_post_mean, z
 
 class Trainer(object):
     def __init__(self, model, device, train, test, epochs, batch_size, learning_rate, nsamples,
-                 sample_path, recon_path, checkpoints, log_path, grad_clip, channel, alpha, beta, kl_weight):
+                 sample_path, recon_path, checkpoints, log_path, grad_clip, channel, alpha, beta, kl_weight, eta):
         self.train = train
         self.test = test
         self.start_epoch = 0
@@ -305,6 +305,7 @@ class Trainer(object):
         self.channel = channel
         self.alpha = alpha
         self.beta = beta
+        self.eta = eta
         self.kl_weight = kl_weight
         self.shape = 32
 
@@ -455,7 +456,7 @@ class Trainer(object):
                 data = data.to(self.device)
                 self.optimizer.zero_grad()
                 zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, z, recon_x,_ , raw_outputs, outputs, lstm_out= self.model(data, temp)
-                loss, kld_z0, kld_z, kld_fwd = loss_fn(self.model.dataset, data, recon_x, zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, raw_outputs, outputs, self.alpha, self.beta, self.kl_weight, lstm_out)
+                loss, kld_z0, kld_z, kld_fwd = loss_fn(self.model.dataset, data, recon_x, zt_1_mean, zt_1_lar, post_zt_mean, post_zt_lar, prior_zt_mean, prior_zt_lar, raw_outputs, outputs, self.alpha, self.beta, self.kl_weight, lstm_out, self.eta)
                 write_log('mse loss is %f, kl0 loss is %f, kl loss is %f, kl fwd loss is %f' % (loss, kld_z0, kld_z, kld_fwd), self.log_path)
                 print('index is %d, mse loss is %f, kl0 loss is %f, kl loss is %f, kl fwd loss is %f' % (i, loss, kld_z0, kld_z, kld_fwd))
                 if self.grad_clip > 0.0:
@@ -515,6 +516,7 @@ if __name__ == '__main__':
     parser.add_argument('--beta', type=float, default=0,
                         help='beta slowness regularization applied on RNN activiation (beta = 0 means no regularization)')
     parser.add_argument('--kl_weight', type=float, default=1.0)
+    parser.add_argument('--eta', type=float, default=1.0)
 
 
     FLAGS = parser.parse_args()
@@ -569,7 +571,7 @@ if __name__ == '__main__':
                       learning_rate=FLAGS.learn_rate,
                       checkpoints='%s/%s-disentangled-vae.model' % (model_path, FLAGS.method), nsamples=FLAGS.nsamples,
                       sample_path=log_sample,
-                      recon_path=log_recon, log_path=log_path, grad_clip=FLAGS.grad_clip, channel=channel, alpha=FLAGS.alpha, beta=FLAGS.beta, kl_weight=FLAGS.kl_weight)
+                      recon_path=log_recon, log_path=log_path, grad_clip=FLAGS.grad_clip, channel=channel, alpha=FLAGS.alpha, beta=FLAGS.beta, kl_weight=FLAGS.kl_weight, eta=FLAGS.eta)
     #trainer.load_checkpoint()
     trainer.train_model()
     endtime = datetime.datetime.now()
