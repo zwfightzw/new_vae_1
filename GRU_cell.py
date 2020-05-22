@@ -49,8 +49,8 @@ class GRUCell(nn.Module):
         if w is None:
             inputgate = F.sigmoid(i_i + h_i)
         else:
-            inputgate = 1 - (1-F.sigmoid(i_i + h_i)) * w
-            #inputgate = F.sigmoid(i_i + h_i) *w
+            #inputgate = 1 - (1-F.sigmoid(i_i + h_i)) * w
+            inputgate = F.sigmoid(i_i + h_i) *w
         if w1 is None:
             newgate = F.tanh(i_n + (resetgate * h_n))
         else:

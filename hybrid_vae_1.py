@@ -119,11 +119,10 @@ class FullQDisentangledVAE(nn.Module):
         # self.z_prior_out_list = nn.Linear(self.hidden_dim,self.z_dim * 2)
         self.z_prior_out_list = nn.Sequential(nn.Linear(self.hidden_dim, self.z_dim * 2))
         self.lockdrop = LockedDropout()
-        self.z_to_c_fwd_list = [GRUCell(input_size=self.hidden_dim, hidden_size=self.hidden_dim//self.block_size).to(self.device)
+        self.z_to_c_fwd_list = [GRUCell(input_size=self.hidden_dim, hidden_size=self.hidden_dim).to(self.device)
                                 for i in range(self.block_size)]
 
-        self.z_w_function = nn.Linear(self.hidden_dim,
-                                      self.block_size)  # nn.Sequential(nn.Linear(self.hidden_dim, self.hidden_dim//2),nn.ReLU(), nn.Linear(self.hidden_dim//2, self.block_size))
+        self.z_w_function = nn.Linear(self.hidden_dim, self.block_size)  # nn.Sequential(nn.Linear(self.hidden_dim, self.hidden_dim//2),nn.ReLU(), nn.Linear(self.hidden_dim//2, self.block_size))
         # observation encoder / decoder
         self.enc_obs = Encoder(feat_size=self.hidden_dim, output_size=self.hidden_dim, channel=channel, shape=shape)
         self.dec_obs = Decoder(input_size=self.z_dim, feat_size=self.hidden_dim, channel=channel, dataset=dataset,
@@ -131,7 +130,7 @@ class FullQDisentangledVAE(nn.Module):
 
     def reparameterize(self, mean, logvar, random_sampling=True):
         # Reparametrization occurs only if random sampling is set to true, otherwise mean is returned
-        random_sampling = True
+        #random_sampling = True
         if random_sampling is True:
             eps = torch.randn_like(logvar)
             std = torch.exp(0.5 * logvar)
@@ -168,7 +167,7 @@ class FullQDisentangledVAE(nn.Module):
         post_z_1 = self.reparameterize(zt_1_mean, zt_1_lar, self.training)
         # init wt
         wt = torch.ones(batch_size, self.block_size).to(self.device)
-        z_fwd_list = [torch.zeros(batch_size, self.hidden_dim//self.block_size).to(self.device) for i in range(self.block_size)]
+        z_fwd_list = [torch.zeros(batch_size, self.hidden_dim).to(self.device) for i in range(self.block_size)]
         z_fwd_all = torch.zeros(batch_size, self.hidden_dim).to(self.device)
         # zt_obs = concat(z_fwd_all, post_z_1)
 
@@ -176,8 +175,8 @@ class FullQDisentangledVAE(nn.Module):
         store_wt.append(wt[0].detach().cpu().numpy())
         zt_obs_list.append(post_z_1)
 
-        curr_layer = [None] * (seq_size)
-        curr_layer[0] = torch.zeros(batch_size, self.hidden_dim).to(self.device)
+        curr_layer = [None] * (seq_size-1)
+        #curr_layer[0] = torch.zeros(batch_size, self.hidden_dim).to(self.device)
 
         for t in range(1, seq_size):
 
@@ -217,8 +216,8 @@ class FullQDisentangledVAE(nn.Module):
                 '''
                 z_fwd_list[fwd_t] = self.z_to_c_fwd_list[fwd_t](zt_1_tmp, z_fwd_list[fwd_t], w=wt[:, fwd_t].view(-1, 1))
 
-            z_fwd_all = torch.stack(z_fwd_list, dim=2).view(batch_size, self.hidden_dim)  # .mean(dim=2)
-            curr_layer[t] = z_fwd_all
+            z_fwd_all = torch.stack(z_fwd_list, dim=2).mean(dim=2).view(batch_size, self.hidden_dim)  # .mean(dim=2)
+            curr_layer[t-1] = z_fwd_all
             # p(xt|zt)
             # zt_obs = concat(z_fwd_all, z_post_sample)
             zt_obs_list.append(z_post_sample)
@@ -252,11 +251,11 @@ class FullQDisentangledVAE(nn.Module):
         z_prior_mean_list = torch.stack(z_prior_mean_list, dim=1)
         z_prior_lar_list = torch.stack(z_prior_lar_list, dim=1)
 
-        return zt_1_mean, zt_1_lar, z_post_mean_list, z_post_lar_list, z_prior_mean_list, z_prior_lar_list, zt_obs_list, store_wt, raw_outputs, outputs, lstm_out
+        return zt_1_mean, zt_1_lar, z_post_mean_list, z_post_lar_list, z_prior_mean_list, z_prior_lar_list, zt_obs_list, store_wt, raw_outputs, outputs, lstm_out[:,0:seq_size-1]
 
     def cumsoftmax(self, x, temp=0.5, dim=-1):
-        if self.training:
-            x = x + sample_gumbel(x.size())
+        #if self.training:
+        #     x = x + sample_gumbel(x.size())
         x = F.softmax(x, dim=dim)
         # x = torch.log(x)/temp
         # x = torch.exp(x)
@@ -395,9 +394,8 @@ class Trainer(object):
             store_wt.append(wt[0].detach().cpu().numpy())
             '''
             store_wt = []
-            z_fwd_list = [torch.zeros(len, self.model.hidden_dim//self.model.block_size).to(self.device) for i in range(self.model.block_size)]
-            z_fwd_all = torch.zeros(len, self.model.hidden_dim).to(self.device)
-            # zt_obs = concat(z_fwd_all, zt_1)
+            z_fwd_list = [torch.zeros(len, self.model.hidden_dim).to(self.device) for i in range(self.model.block_size)]
+
             zt_dec.append(zt_1)
             for t in range(1, self.model.frames):
                 for fwd_t in range(self.model.block_size):
@@ -430,7 +428,7 @@ class Trainer(object):
                     z_fwd_list[fwd_t] = self.model.z_to_c_fwd_list[fwd_t](zt_1_tmp, z_fwd_list[fwd_t],
                                                                           w=wt[:, fwd_t].view(-1, 1))
 
-                z_fwd_all = torch.stack(z_fwd_list, dim=2).view(len, self.model.hidden_dim)  # .mean(dim=2)
+                z_fwd_all = torch.stack(z_fwd_list, dim=2).mean(dim=2).view(len, self.model.hidden_dim)  # .mean(dim=2)
                 # update weight, w0<...<wd<=1, d means block_size
 
                 z_prior_fwd = self.model.z_prior_out_list(z_fwd_all)
