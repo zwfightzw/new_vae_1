@@ -125,7 +125,7 @@ class FullQDisentangledVAE(nn.Module):
         self.enc_obs = Encoder(feat_size=self.hidden_dim, output_size=self.hidden_dim, channel=channel, shape=shape)
         self.dec_obs = Decoder(input_size=self.z_dim, feat_size=self.hidden_dim, channel=channel, dataset=dataset,
                                shape=shape)
-        '''
+
         for m in self.modules():
             if isinstance(m, nn.BatchNorm2d) or isinstance(m, nn.BatchNorm1d):
                 nn.init.constant_(m.weight, 1)
@@ -138,7 +138,7 @@ class FullQDisentangledVAE(nn.Module):
             elif isinstance(m, nn.Linear):
                 nn.init.normal(m.weight, std=0.1)
                 nn.init.constant_(m.bias, 0.1)
-        '''
+
 
     def reparameterize(self, mean, logvar, random_sampling=True):
         # Reparametrization occurs only if random sampling is set to true, otherwise mean is returned
