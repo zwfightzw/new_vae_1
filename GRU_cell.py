@@ -27,6 +27,7 @@ class GRUCell(nn.Module):
         self.reset_parameters()
 
     def reset_parameters(self):
+        '''
         std = 0.1 #1.0 / math.sqrt(self.hidden_size)
         for m in self.modules():
             if isinstance(m, nn.Linear):
@@ -37,7 +38,7 @@ class GRUCell(nn.Module):
         std = 1.0 / math.sqrt(self.hidden_size)
         for w in self.parameters():
             w.data.uniform_(-std, std)
-        '''
+
 
     def forward(self, x, hidden, w=None, w1=None):
         x = x.view(-1, x.size(1))

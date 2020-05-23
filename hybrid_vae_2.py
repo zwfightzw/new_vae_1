@@ -249,9 +249,7 @@ class FullQDisentangledVAE(nn.Module):
         zt_obs_list = torch.stack(zt_obs_list, dim=1)
 
 
-        return z_post_norm_list, z_prior_norm_list, zt_obs_list, store_wt, raw_outputs, outputs, lstm_out[
-                                                                                                                                                         :,
-                                                                                                                                                         0:seq_size - 1]
+        return z_post_norm_list, z_prior_norm_list, zt_obs_list, store_wt, raw_outputs, outputs, lstm_out[:,0:seq_size - 1]
 
     def cumsoftmax(self, x, temp=0.5, dim=-1):
         # if self.training:
@@ -537,7 +535,7 @@ if __name__ == '__main__':
     # optimization
     parser.add_argument('--learn-rate', type=float, default=0.0005)
     parser.add_argument('--temperature', type=float, default=1.0)
-    parser.add_argument('--grad-clip', type=float, default=0.0)
+    parser.add_argument('--grad-clip', type=float, default=10.0)
     parser.add_argument('--max-epochs', type=int, default=100)
     parser.add_argument('--gpu_id', type=int, default=1)
 
