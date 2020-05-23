@@ -123,11 +123,14 @@ class FullQDisentangledVAE(nn.Module):
             if isinstance(m, nn.BatchNorm2d) or isinstance(m, nn.BatchNorm1d):
                 nn.init.constant_(m.weight, 1)
                 nn.init.constant_(m.bias, 1)
-            elif isinstance(m, nn.Conv2d) or isinstance(m, nn.ConvTranspose2d) or isinstance(m, nn.Linear):
+            elif isinstance(m, nn.Conv2d) or isinstance(m, nn.ConvTranspose2d):
+                nn.init.kaiming_normal_(m.weight,
+                                        nonlinearity='relu')  #
                 # Change nonlinearity to 'leaky_relu' if you switch
+
+            elif isinstance(m, nn.Linear):
                 nn.init.normal(m.weight, std=0.1)
-                if isinstance(m, nn.Linear):
-                    nn.init.constant_(m.bias, 0.1)
+                nn.init.constant_(m.bias, 0.1)
 
     def reparameterize(self, mean, logvar, random_sampling=True):
         # Reparametrization occurs only if random sampling is set to true, otherwise mean is returned
