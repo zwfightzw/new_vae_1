@@ -35,7 +35,8 @@ class GRUCell(nn.Module):
                 nn.init.normal(m.weight, std=0.1)
                 nn.init.constant_(m.bias, 0.1)
         '''
-        std = 1.0 / math.sqrt(self.hidden_size)
+        #std = 1.0 / math.sqrt(self.hidden_size)
+        std = 0.1
         for w in self.parameters():
             w.data.uniform_(-std, std)
 
