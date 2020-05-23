@@ -23,15 +23,16 @@ class GRUCell(nn.Module):
         self.h2h = nn.Sequential(
             nn.Linear(hidden_size, 3*hidden_size, bias=True),
             #nn.ReLU(),nn.Linear(hidden_size, 3* hidden_size)
-
         )
-
         self.reset_parameters()
 
     def reset_parameters(self):
-        std = 1.0 / math.sqrt(self.hidden_size)
-        for w in self.parameters():
-            w.data.uniform_(-std, std)
+        std = 0.1 #1.0 / math.sqrt(self.hidden_size)
+        for m in self.modules():
+            if isinstance(m, nn.Linear):
+                # Change nonlinearity to 'leaky_relu' if you switch
+                nn.init.normal(m.weight, std=0.1)
+                nn.init.constant_(m.bias, 0.1)
 
     def forward(self, x, hidden, w=None, w1=None):
         x = x.view(-1, x.size(1))
