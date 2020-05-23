@@ -33,6 +33,11 @@ class GRUCell(nn.Module):
                 # Change nonlinearity to 'leaky_relu' if you switch
                 nn.init.normal(m.weight, std=0.1)
                 nn.init.constant_(m.bias, 0.1)
+        '''
+        std = 1.0 / math.sqrt(self.hidden_size)
+        for w in self.parameters():
+            w.data.uniform_(-std, std)
+        '''
 
     def forward(self, x, hidden, w=None, w1=None):
         x = x.view(-1, x.size(1))
