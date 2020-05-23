@@ -168,9 +168,9 @@ class FullQDisentangledVAE(nn.Module):
         zt_1_mean = zt_1_post[:, :self.z_dim]
         zt_1_lar = zt_1_post[:, self.z_dim:]
 
-        z_post_norm_list.append(Normal(loc=zt_1_mean, scale=torch.))
+        z_post_norm_list.append(Normal(loc=zt_1_mean, scale=torch.sigmoid(zt_1_lar)))
         z_prior_norm_list.append(Normal(torch.zeros(batch_size, self.z_dim).to(self.device), torch.ones(batch_size, self.z_dim).to(self.device)))
-        post_z_1 = Normal(zt_1_mean, nn.Sigmoid(zt_1_lar)).rsample()
+        post_z_1 = Normal(zt_1_mean, torch.sigmoid(zt_1_lar)).rsample()
         # init wt
         wt = torch.ones(batch_size, self.block_size).to(self.device)
         z_fwd_list = [torch.zeros(batch_size, self.hidden_dim).to(self.device) for i in range(self.block_size)]
@@ -189,8 +189,8 @@ class FullQDisentangledVAE(nn.Module):
             zt_post_mean = z_post_out[:, :self.z_dim]
             zt_post_lar = z_post_out[:, self.z_dim:]
 
-            z_post_norm_list.append(Normal(zt_post_mean, nn.Sigmoid(zt_post_lar)))
-            z_post_sample = Normal(zt_post_mean, nn.Sigmoid(zt_post_lar)).rsample()
+            z_post_norm_list.append(Normal(zt_post_mean, torch.sigmoid(zt_post_lar)))
+            z_post_sample = Normal(zt_post_mean, torch.sigmoid(zt_post_lar)).rsample()
 
             for fwd_t in range(self.block_size):
                 # prior over ct of each block, ct_i~p(ct_i|zt-1_i)
@@ -301,7 +301,7 @@ def loss_fn(dataset, original_seq, recon_seq, z_post_norm, z_prior_norm,  raw_ou
 
     kl_abs_state_list = torch.stack(kl_abs_state_list, dim=1)
 
-    return (obs_cost + kl_weight * (kl_abs_state_list.mean() + kl_fwd) + loss) / batch_size, kl_weight * (kl_abs_state_list.mean()) / batch_size, kl_weight * kl_fwd / batch_size
+    return (obs_cost + kl_weight * (kl_abs_state_list.sum() + kl_fwd) + loss) / batch_size, kl_weight * (kl_abs_state_list.sum()) / batch_size, kl_weight * kl_fwd / batch_size
 
 
 class Trainer(object):
@@ -366,7 +366,7 @@ class Trainer(object):
             zt_1_mean = zt_1_post[:, :self.model.z_dim]
             zt_1_lar = zt_1_post[:, self.model.z_dim:]
 
-            zt_1 = self.model.reparameterize(zt_1_mean, zt_1_lar, self.model.training)
+            zt_1 = Normal(zt_1_mean, torch.sigmoid(zt_1_lar)).rsample()
             # zt_1 = [Normal(torch.zeros(self.model.z_dim).to(self.device), torch.ones(self.model.z_dim).to(self.device)).rsample() for i in range(len)]
             # zt_1 = torch.stack(zt_1, dim=0)
 
@@ -423,7 +423,7 @@ class Trainer(object):
                 z_fwd_latent_lar = z_prior_fwd[:, self.model.z_dim:]
 
                 # store the prior of ct_i
-                zt = self.model.reparameterize(z_fwd_latent_mean, z_fwd_latent_lar, self.model.training)
+                zt = Normal(z_fwd_latent_mean, torch.sigmoid(z_fwd_latent_lar)).rsample()
                 # zt_obs = concat(z_fwd_all, zt)
                 # zt = gumbel_softmax(zt,1.0,self.model.z_dim)
                 zt_dec.append(zt)
@@ -443,7 +443,7 @@ class Trainer(object):
 
     def recon_frame(self, epoch, original):
         with torch.no_grad():
-            _, _, _, _, _, _, _, recon, store_wt, _, _, _ = self.model(original, 1.0)
+            _, _, _, recon, store_wt, _, _, _ = self.model(original, 1.0)
             image = torch.cat((original, recon), dim=0)
             print(image.shape)
             image = image.view(2 * original.shape[1], channel, self.shape, self.shape)
@@ -470,7 +470,6 @@ class Trainer(object):
         for epoch in range(self.start_epoch, self.epochs):
             losses = []
             kl_loss = []
-            kl0_loss = []
             kld_fwd_loss = []
 
             if epoch > klstart:
@@ -482,30 +481,27 @@ class Trainer(object):
                 self.optimizer.zero_grad()
                 z_post_norm, z_prior_norm, z, recon_x, _, raw_outputs, outputs, lstm_out = self.model(
                     data, temp)
-                loss, kld_z0, kld_z, kld_fwd = loss_fn(self.model.dataset, data, recon_x, z_post_norm, z_prior_norm,
+                loss, kld_z, kld_fwd = loss_fn(self.model.dataset, data, recon_x, z_post_norm, z_prior_norm,
                                                        raw_outputs, outputs, self.alpha, self.beta, self.kl_weight,
                                                        lstm_out, self.eta)
                 write_log(
-                    'mse loss is %f, kl0 loss is %f, kl loss is %f, kl fwd loss is %f' % (loss, kld_z0, kld_z, kld_fwd),
+                    'mse loss is %f, kl loss is %f, kl fwd loss is %f' % (loss, kld_z, kld_fwd),
                     self.log_path)
-                print('index is %d, mse loss is %f, kl0 loss is %f, kl loss is %f, kl fwd loss is %f' % (
-                i, loss, kld_z0, kld_z, kld_fwd))
+                print('index is %d, mse loss is %f, kl loss is %f, kl fwd loss is %f' % (
+                i, loss, kld_z, kld_fwd))
                 if self.grad_clip > 0.0:
                     nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
                 loss.backward()
                 self.optimizer.step()
                 kl_loss.append(kld_z.item())
-                kl0_loss.append(kld_z0.item())
                 kld_fwd_loss.append(kld_fwd.item())
                 losses.append(loss.item())
             meanloss = np.mean(losses)
             klloss = np.mean(kl_loss)
-            kl0loss = np.mean(kl0_loss)
             kldfwdloss = np.mean(kld_fwd_loss)
             self.epoch_losses.append((meanloss, klloss))
             write_log(
-                "Epoch {} : Average Loss: {}, KL0 loss :{}, KL loss :{}, kl fwd loss :{}".format(epoch + 1, meanloss,
-                                                                                                 kl0loss, klloss,
+                "Epoch {} : Average Loss: {}, KL loss :{}, kl fwd loss :{}".format(epoch + 1, meanloss, klloss,
                                                                                                  kldfwdloss),
                 self.log_path)
             # self.save_checkpoint(epoch)
