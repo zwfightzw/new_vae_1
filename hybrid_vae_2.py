@@ -106,7 +106,7 @@ class FullQDisentangledVAE(nn.Module):
         self.device = device
         self.dataset = dataset
         self.temperature = temperature
-        self.dropout = 0.25
+        self.dropout = 0.35
 
         self.z_lstm = nn.LSTM(self.hidden_dim, self.hidden_dim // 2, 1, bidirectional=True, batch_first=True)
         # self.z_lstm = nn.LSTM(self.hidden_dim, self.hidden_dim, 1, batch_first=True)
@@ -244,7 +244,7 @@ class FullQDisentangledVAE(nn.Module):
 
         prev_layer = torch.stack(curr_layer)
         raw_outputs.append(prev_layer)
-        # prev_layer = self.lockdrop(prev_layer, self.dropout)
+        prev_layer = self.lockdrop(prev_layer, self.dropout)
         outputs.append(prev_layer)
 
         zt_obs_list = torch.stack(zt_obs_list, dim=1)
@@ -536,7 +536,7 @@ if __name__ == '__main__':
     # optimization
     parser.add_argument('--learn-rate', type=float, default=0.0005)
     parser.add_argument('--temperature', type=float, default=1.0)
-    parser.add_argument('--grad-clip', type=float, default=10.0)
+    parser.add_argument('--grad-clip', type=float, default=0.0)
     parser.add_argument('--max-epochs', type=int, default=100)
     parser.add_argument('--gpu_id', type=int, default=1)
 
