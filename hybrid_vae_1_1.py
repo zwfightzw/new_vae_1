@@ -128,6 +128,19 @@ class FullQDisentangledVAE(nn.Module):
         self.dec_obs = Decoder(input_size=self.z_dim, feat_size=self.hidden_dim, channel=channel, dataset=dataset,
                                shape=shape)
 
+        for m in self.modules():
+            if isinstance(m, nn.BatchNorm2d) or isinstance(m, nn.BatchNorm1d):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 1)
+            elif isinstance(m, nn.Conv2d) or isinstance(m, nn.ConvTranspose2d):
+                nn.init.kaiming_normal_(m.weight,
+                                        nonlinearity='relu')  #
+                # Change nonlinearity to 'leaky_relu' if you switch
+
+            elif isinstance(m, nn.Linear):
+                nn.init.normal(m.weight, std=0.1)
+                nn.init.constant_(m.bias, 0.1)
+
     def reparameterize(self, mean, logvar, random_sampling=True):
         # Reparametrization occurs only if random sampling is set to true, otherwise mean is returned
         #random_sampling = True
@@ -164,7 +177,15 @@ class FullQDisentangledVAE(nn.Module):
         zt_1_lar = zt_1_post[:, self.z_dim:]
 
         z_post_norm_list.append(Normal(loc=zt_1_mean, scale=torch.sigmoid(zt_1_lar)))
-        z_prior_norm_list.append(Normal(torch.zeros(batch_size, self.z_dim).to(self.device), torch.ones(batch_size, self.z_dim).to(self.device)))
+
+        z_prior_fwd = self.z_prior_out_list(lstm_out[:, 0])
+        z_fwd_latent_mean = z_prior_fwd[:, :self.z_dim]
+        z_fwd_latent_lar = z_prior_fwd[:, self.z_dim:]
+
+        # store the prior of ct_i
+        z_prior_norm_list.append(Normal(z_fwd_latent_mean, torch.sigmoid(z_fwd_latent_lar)))
+
+        #z_prior_norm_list.append(Normal(torch.zeros(batch_size, self.z_dim).to(self.device), torch.ones(batch_size, self.z_dim).to(self.device)))
         post_z_1 = Normal(zt_1_mean, torch.sigmoid(zt_1_lar)).rsample()
         # init wt
         wt = torch.ones(batch_size, self.block_size).to(self.device)
@@ -557,7 +578,7 @@ if __name__ == '__main__':
     parser.add_argument('--beta', type=float, default=0,
                         help='beta slowness regularization applied on RNN activiation (beta = 0 means no regularization)')
     parser.add_argument('--kl_weight', type=float, default=1.0)
-    parser.add_argument('--eta', type=float, default=1.0)
+    parser.add_argument('--eta', type=float, default=0.0)
 
     FLAGS = parser.parse_args()
     np.random.seed(FLAGS.seed)
