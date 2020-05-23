@@ -125,7 +125,7 @@ class FullQDisentangledVAE(nn.Module):
         self.enc_obs = Encoder(feat_size=self.hidden_dim, output_size=self.hidden_dim, channel=channel, shape=shape)
         self.dec_obs = Decoder(input_size=self.z_dim, feat_size=self.hidden_dim, channel=channel, dataset=dataset,
                                shape=shape)
-
+        '''
         for m in self.modules():
             if isinstance(m, nn.BatchNorm2d) or isinstance(m, nn.BatchNorm1d):
                 nn.init.constant_(m.weight, 1)
@@ -138,6 +138,7 @@ class FullQDisentangledVAE(nn.Module):
             elif isinstance(m, nn.Linear):
                 nn.init.normal(m.weight, std=0.1)
                 nn.init.constant_(m.bias, 0.1)
+        '''
 
     def reparameterize(self, mean, logvar, random_sampling=True):
         # Reparametrization occurs only if random sampling is set to true, otherwise mean is returned
@@ -235,7 +236,7 @@ class FullQDisentangledVAE(nn.Module):
             z_fwd_latent_lar = z_prior_fwd[:, self.z_dim:]
 
             # store the prior of ct_i
-            z_prior_norm_list.append(Normal(z_fwd_latent_mean, z_fwd_latent_lar))
+            z_prior_norm_list.append(Normal(z_fwd_latent_mean, torch.sigmoid(z_fwd_latent_lar)))
             post_z_1 = z_post_sample
 
         raw_outputs = []
@@ -544,7 +545,7 @@ if __name__ == '__main__':
     parser.add_argument('--beta', type=float, default=0,
                         help='beta slowness regularization applied on RNN activiation (beta = 0 means no regularization)')
     parser.add_argument('--kl_weight', type=float, default=1.0)
-    parser.add_argument('--eta', type=float, default=1.0)
+    parser.add_argument('--eta', type=float, default=0.0)
 
     FLAGS = parser.parse_args()
     np.random.seed(FLAGS.seed)
