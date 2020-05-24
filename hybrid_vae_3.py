@@ -137,7 +137,7 @@ class FullQDisentangledVAE(nn.Module):
 
             elif isinstance(m, nn.Linear):
                 nn.init.normal(m.weight, std=0.1)
-                nn.init.constant_(m.bias, 0.1)
+                #nn.init.constant_(m.bias, 0.1)
 
 
     def reparameterize(self, mean, logvar, random_sampling=True):
@@ -536,7 +536,7 @@ if __name__ == '__main__':
     parser.add_argument('--conv-dim', type=int, default=256)  # 256 512
     parser.add_argument('--block_size', type=int, default=2)  # 3  4
     # data size
-    parser.add_argument('--batch-size', type=int, default=18)
+    parser.add_argument('--batch-size', type=int, default=64)
     parser.add_argument('--frame-size', type=int, default=20)
     parser.add_argument('--nsamples', type=int, default=2)
 
@@ -552,7 +552,7 @@ if __name__ == '__main__':
     parser.add_argument('--beta', type=float, default=1,
                         help='beta slowness regularization applied on RNN activiation (beta = 0 means no regularization)')
     parser.add_argument('--kl_weight', type=float, default=1.0)
-    parser.add_argument('--eta', type=float, default=1.0)
+    parser.add_argument('--eta', type=float, default=0.0)
 
     FLAGS = parser.parse_args()
     np.random.seed(FLAGS.seed)

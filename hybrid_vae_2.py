@@ -137,7 +137,7 @@ class FullQDisentangledVAE(nn.Module):
 
             elif isinstance(m, nn.Linear):
                 nn.init.normal(m.weight, std=0.1)
-                nn.init.constant_(m.bias, 0.1)
+                #nn.init.constant_(m.bias, 0.1)
 
 
     def reparameterize(self, mean, logvar, random_sampling=True):
@@ -544,7 +544,7 @@ if __name__ == '__main__':
 
     # optimization
     parser.add_argument('--learn-rate', type=float, default=0.001)
-    parser.add_argument('--temperature', type=float, default=1.5)
+    parser.add_argument('--temperature', type=float, default=0.5)
     parser.add_argument('--grad-clip', type=float, default=0.0)
     parser.add_argument('--max-epochs', type=int, default=100)
     parser.add_argument('--gpu_id', type=int, default=1)
@@ -554,7 +554,7 @@ if __name__ == '__main__':
     parser.add_argument('--beta', type=float, default=1,
                         help='beta slowness regularization applied on RNN activiation (beta = 0 means no regularization)')
     parser.add_argument('--kl_weight', type=float, default=1.0)
-    parser.add_argument('--eta', type=float, default=1.0)
+    parser.add_argument('--eta', type=float, default=0.0)
 
     FLAGS = parser.parse_args()
     np.random.seed(FLAGS.seed)
