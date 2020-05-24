@@ -108,7 +108,7 @@ class FullQDisentangledVAE(nn.Module):
         self.temperature = temperature
         self.dropout = 0.35
 
-        self.z_lstm = nn.LSTM(self.hidden_dim, self.hidden_dim // 2, 1, bidirectional=True, batch_first=True)
+        self.z_lstm = nn.GRU(self.hidden_dim, self.hidden_dim // 2, 1, bidirectional=True, batch_first=True)
         #self.z_lstm = nn.LSTM(self.hidden_dim, self.hidden_dim, 1, batch_first=True)
         self.z_rnn = nn.GRU(self.hidden_dim, self.hidden_dim, batch_first=True)
         self.z_post_out = nn.Linear(self.hidden_dim, self.z_dim * 2)
@@ -118,6 +118,8 @@ class FullQDisentangledVAE(nn.Module):
         self.lockdrop = LockedDropout()
         self.z_to_c_fwd_list = [GRUCell(input_size=self.z_dim, hidden_size=self.hidden_dim).to(self.device)
                                 for i in range(self.block_size)]
+
+        self.z_prior = nn.GRUCell(self.hidden_dim, self.hidden_dim)
 
         self.z_w_function = nn.Linear(self.hidden_dim,
                                       self.block_size)  # nn.Sequential(nn.Linear(self.hidden_dim, self.hidden_dim//2),nn.ReLU(), nn.Linear(self.hidden_dim//2, self.block_size))
@@ -183,7 +185,8 @@ class FullQDisentangledVAE(nn.Module):
         post_z_1 = Normal(zt_1_mean, torch.sigmoid(zt_1_lar)).rsample()
         # init wt
         wt = torch.ones(batch_size, self.block_size).to(self.device)
-        z_fwd_list = torch.zeros(batch_size, self.hidden_dim).to(self.device)
+        z_fwd_list = [torch.zeros(batch_size, self.hidden_dim).to(self.device) for i in range(self.block_size)]
+        z_fwd_prior = torch.zeros(batch_size, self.hidden_dim).to(self.device)
         # z_fwd_all = torch.stack(z_fwd_list, dim=2).view(batch_size, self.hidden_dim)
         # zt_obs = concat(z_fwd_all, post_z_1)
 
@@ -191,8 +194,7 @@ class FullQDisentangledVAE(nn.Module):
         store_wt.append(wt[0].detach().cpu().numpy())
         zt_obs_list.append(post_z_1)
 
-        curr_layer = [None] * (seq_size)
-        curr_layer[0] = z_fwd_list
+        curr_layer = [None] * (seq_size - 1)
 
         for t in range(1, seq_size):
 
@@ -227,20 +229,23 @@ class FullQDisentangledVAE(nn.Module):
                                       z_post_sample[:, fwd_t * each_block_size: (fwd_t + 1) * each_block_size],
                                       torch.zeros(batch_size, (self.block_size -1-fwd_t) * each_block_size).to(self.device))
                 '''
-                z_fwd_list = self.z_to_c_fwd_list[fwd_t](zt_1_tmp, z_fwd_list, w=wt[:, fwd_t].view(-1, 1))
+                z_fwd_list[fwd_t] = self.z_to_c_fwd_list[fwd_t](zt_1_tmp, z_fwd_list[fwd_t], w=wt[:, fwd_t].view(-1, 1))
 
-            curr_layer[t] = z_fwd_list
+            z_fwd_all = torch.stack(z_fwd_list, dim=2).mean(dim=2).view(batch_size, self.hidden_dim)  # .mean(dim=2)
+
+            z_fwd_prior = self.z_prior(z_fwd_all, z_fwd_prior)
+            curr_layer[t - 1] = z_fwd_prior
             # p(xt|zt)
             # zt_obs = concat(z_fwd_all, z_post_sample)
             zt_obs_list.append(z_post_sample)
             # update weight, w0<...<wd<=1, d means block_size
             # wt = self.z_w_function(concat(z_fwd_all,z_post_sample))
-            wt = self.z_w_function(z_fwd_list)
+            wt = self.z_w_function(z_fwd_all)
             wt = self.cumsoftmax(wt, self.temperature)
 
             store_wt.append(wt[0].detach().cpu().numpy())
 
-            z_prior_fwd = self.z_prior_out_list(z_fwd_list)
+            z_prior_fwd = self.z_prior_out_list(z_fwd_prior)
             z_fwd_latent_mean = z_prior_fwd[:, :self.z_dim]
             z_fwd_latent_lar = z_prior_fwd[:, self.z_dim:]
 
@@ -259,7 +264,7 @@ class FullQDisentangledVAE(nn.Module):
         zt_obs_list = torch.stack(zt_obs_list, dim=1)
 
 
-        return z_post_norm_list, z_prior_norm_list, zt_obs_list, store_wt, raw_outputs, outputs, lstm_out
+        return z_post_norm_list, z_prior_norm_list, zt_obs_list, store_wt, raw_outputs, outputs, lstm_out[:,0:seq_size - 1]
 
     def cumsoftmax(self, x, temp=0.5, dim=-1):
         # if self.training:
@@ -388,7 +393,8 @@ class Trainer(object):
             store_wt.append(wt[0].detach().cpu().numpy())
             '''
             store_wt = []
-            z_fwd_list = torch.zeros(len, self.model.hidden_dim).to(self.device)
+            z_fwd_list = [torch.zeros(len, self.model.hidden_dim).to(self.device) for i in range(self.model.block_size)]
+            z_fwd_prior = torch.zeros(len, self.model.hidden_dim).to(self.device)
             # z_fwd_all = torch.stack(z_fwd_list, dim=2).view(len, self.model.hidden_dim)
             # zt_obs = concat(z_fwd_all, zt_1)
             zt_dec.append(zt_1)
@@ -420,11 +426,15 @@ class Trainer(object):
                                           zt_1[:, fwd_t * each_block_size: (fwd_t + 1) * each_block_size],
                                           torch.zeros(len, (self.model.block_size - 1 - fwd_t) * each_block_size).to(self.device))
                     '''
-                    z_fwd_list = self.model.z_to_c_fwd_list[fwd_t](zt_1_tmp, z_fwd_list, w=wt[:, fwd_t].view(-1, 1))
+                    z_fwd_list[fwd_t] = self.model.z_to_c_fwd_list[fwd_t](zt_1_tmp, z_fwd_list[fwd_t],
+                                                                          w=wt[:, fwd_t].view(-1, 1))
 
+                z_fwd_all = torch.stack(z_fwd_list, dim=2).mean(dim=2).view(len, self.model.hidden_dim)  # .mean(dim=2)
                 # update weight, w0<...<wd<=1, d means block_size
 
-                z_prior_fwd = self.model.z_prior_out_list(z_fwd_list)
+                z_fwd_prior = self.model.z_prior(z_fwd_all, z_fwd_prior)
+
+                z_prior_fwd = self.model.z_prior_out_list(z_fwd_prior)
                 z_fwd_latent_mean = z_prior_fwd[:, :self.model.z_dim]
                 z_fwd_latent_lar = z_prior_fwd[:, self.model.z_dim:]
 
@@ -435,7 +445,7 @@ class Trainer(object):
                 zt_dec.append(zt)
 
                 # wt = self.model.z_w_function(concat(z_fwd_all, zt))
-                wt = self.model.z_w_function(z_fwd_list)
+                wt = self.model.z_w_function(z_fwd_all)
                 wt = self.model.cumsoftmax(wt, self.model.temperature)
                 store_wt.append(wt[0].detach().cpu().numpy())
                 # decode observation
@@ -527,7 +537,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="hybrid_vae")
     parser.add_argument('--seed', type=int, default=111)
     # method
-    parser.add_argument('--method', type=str, default='Hybrid_3')
+    parser.add_argument('--method', type=str, default='Hybrid_4')
     # dataset
     parser.add_argument('--dset_name', type=str, default='bouncing_balls')  # moving_mnist, lpc, bouncing_balls
     # state size
@@ -536,16 +546,16 @@ if __name__ == '__main__':
     parser.add_argument('--conv-dim', type=int, default=256)  # 256 512
     parser.add_argument('--block_size', type=int, default=2)  # 3  4
     # data size
-    parser.add_argument('--batch-size', type=int, default=64)
+    parser.add_argument('--batch-size', type=int, default=32)
     parser.add_argument('--frame-size', type=int, default=20)
     parser.add_argument('--nsamples', type=int, default=2)
 
     # optimization
     parser.add_argument('--learn-rate', type=float, default=0.001)
-    parser.add_argument('--temperature', type=float, default=1.5)
+    parser.add_argument('--temperature', type=float, default=0.5)
     parser.add_argument('--grad-clip', type=float, default=0.0)
     parser.add_argument('--max-epochs', type=int, default=100)
-    parser.add_argument('--gpu_id', type=int, default=1)
+    parser.add_argument('--gpu_id', type=int, default=0)
 
     parser.add_argument('--alpha', type=float, default=0,
                         help='alpha L2 regularization on RNN activation (alpha = 0 means no regularization)')
