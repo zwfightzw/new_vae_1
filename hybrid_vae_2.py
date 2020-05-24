@@ -265,9 +265,9 @@ class FullQDisentangledVAE(nn.Module):
         # if self.training:
         #    x = x + sample_gumbel(x.size())
         x = F.softmax(x, dim=dim)
-        # x = torch.log(x)/temp
-        # x = torch.exp(x)
-        # x = x / torch.sum(x)
+        x = torch.log(x)/temp
+        x = torch.exp(x)
+        x = x / torch.sum(x)
         x = torch.cumsum(x, dim=dim)
         return x
 
@@ -536,7 +536,7 @@ if __name__ == '__main__':
     parser.add_argument('--z-dim', type=int, default=144)  # 72 144
     parser.add_argument('--hidden-dim', type=int, default=216)  # 216 252
     parser.add_argument('--conv-dim', type=int, default=256)  # 256 512
-    parser.add_argument('--block_size', type=int, default=3)  # 3  4
+    parser.add_argument('--block_size', type=int, default=2)  # 3  4
     # data size
     parser.add_argument('--batch-size', type=int, default=64)
     parser.add_argument('--frame-size', type=int, default=20)
@@ -544,7 +544,7 @@ if __name__ == '__main__':
 
     # optimization
     parser.add_argument('--learn-rate', type=float, default=0.001)
-    parser.add_argument('--temperature', type=float, default=1.0)
+    parser.add_argument('--temperature', type=float, default=1.5)
     parser.add_argument('--grad-clip', type=float, default=0.0)
     parser.add_argument('--max-epochs', type=int, default=100)
     parser.add_argument('--gpu_id', type=int, default=1)
