@@ -96,7 +96,7 @@ class LockedDropout(nn.Module):
 
 
 class FullQDisentangledVAE(nn.Module):
-    def __init__(self, temperature, frames, z_dim, conv_dim, hidden_dim, block_size, channel, dataset, device, shape):
+    def __init__(self, temperature, frames, z_dim, conv_dim, hidden_dim, block_size, channel, dataset, device, shape, dropout):
         super(FullQDisentangledVAE, self).__init__()
         self.z_dim = z_dim
         self.frames = frames
@@ -106,7 +106,7 @@ class FullQDisentangledVAE(nn.Module):
         self.device = device
         self.dataset = dataset
         self.temperature = temperature
-        self.dropout = 0.35
+        self.dropout = dropout
 
         self.z_lstm = nn.GRU(self.hidden_dim, self.hidden_dim // 2, 1, bidirectional=True, batch_first=True)
         #self.z_lstm = nn.LSTM(self.hidden_dim, self.hidden_dim, 1, batch_first=True)
@@ -253,7 +253,7 @@ class FullQDisentangledVAE(nn.Module):
 
         prev_layer = torch.stack(curr_layer)
         raw_outputs.append(prev_layer)
-        #prev_layer = self.lockdrop(prev_layer, self.dropout)
+        prev_layer = self.lockdrop(prev_layer, self.dropout)
         outputs.append(prev_layer)
 
         zt_obs_list = torch.stack(zt_obs_list, dim=1)
@@ -555,6 +555,7 @@ if __name__ == '__main__':
                         help='beta slowness regularization applied on RNN activiation (beta = 0 means no regularization)')
     parser.add_argument('--kl_weight', type=float, default=1.0)
     parser.add_argument('--eta', type=float, default=0.0)
+    parser.add_argument('--dropout', type=float, default=1.0)
 
     FLAGS = parser.parse_args()
     np.random.seed(FLAGS.seed)
@@ -585,7 +586,7 @@ if __name__ == '__main__':
     vae = FullQDisentangledVAE(temperature=FLAGS.temperature, frames=FLAGS.frame_size, z_dim=FLAGS.z_dim,
                                hidden_dim=FLAGS.hidden_dim,
                                conv_dim=FLAGS.conv_dim, block_size=FLAGS.block_size, channel=channel,
-                               dataset=FLAGS.dset_name, device=device, shape=shape)
+                               dataset=FLAGS.dset_name, device=device, shape=shape, dropout=FLAGS.dropout)
 
     starttime = datetime.datetime.now()
     now = datetime.datetime.now(dateutil.tz.tzlocal())

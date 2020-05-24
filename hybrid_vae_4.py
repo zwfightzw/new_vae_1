@@ -96,7 +96,7 @@ class LockedDropout(nn.Module):
 
 
 class FullQDisentangledVAE(nn.Module):
-    def __init__(self, temperature, frames, z_dim, conv_dim, hidden_dim, block_size, channel, dataset, device, shape):
+    def __init__(self, temperature, frames, z_dim, conv_dim, hidden_dim, block_size, channel, dataset, device, shape, dropout):
         super(FullQDisentangledVAE, self).__init__()
         self.z_dim = z_dim
         self.frames = frames
@@ -106,7 +106,7 @@ class FullQDisentangledVAE(nn.Module):
         self.device = device
         self.dataset = dataset
         self.temperature = temperature
-        self.dropout = 0.35
+        self.dropout = dropout
 
         self.z_lstm = nn.GRU(self.hidden_dim, self.hidden_dim // 2, 1, bidirectional=True, batch_first=True)
         #self.z_lstm = nn.LSTM(self.hidden_dim, self.hidden_dim, 1, batch_first=True)
@@ -116,7 +116,9 @@ class FullQDisentangledVAE(nn.Module):
         # self.z_prior_out_list = nn.Linear(self.hidden_dim,self.z_dim * 2)
         self.z_prior_out_list = nn.Sequential(nn.Linear(self.hidden_dim, self.z_dim * 2))
         self.lockdrop = LockedDropout()
-        self.z_to_c_fwd_list = [GRUCell(input_size=self.z_dim, hidden_size=self.hidden_dim).to(self.device)
+
+        self.z_pre = nn.Linear(self.z_dim, self.z_dim)
+        self.z_to_c_fwd_list = [GRUCell(input_size=self.z_dim, hidden_size=self.hidden_dim//self.block_size).to(self.device)
                                 for i in range(self.block_size)]
 
         self.z_prior = nn.GRUCell(self.hidden_dim, self.hidden_dim)
@@ -185,7 +187,7 @@ class FullQDisentangledVAE(nn.Module):
         post_z_1 = Normal(zt_1_mean, torch.sigmoid(zt_1_lar)).rsample()
         # init wt
         wt = torch.ones(batch_size, self.block_size).to(self.device)
-        z_fwd_list = [torch.zeros(batch_size, self.hidden_dim).to(self.device) for i in range(self.block_size)]
+        z_fwd_list = [torch.zeros(batch_size, self.hidden_dim//self.block_size).to(self.device) for i in range(self.block_size)]
         z_fwd_prior = torch.zeros(batch_size, self.hidden_dim).to(self.device)
         # z_fwd_all = torch.stack(z_fwd_list, dim=2).view(batch_size, self.hidden_dim)
         # zt_obs = concat(z_fwd_all, post_z_1)
@@ -231,7 +233,7 @@ class FullQDisentangledVAE(nn.Module):
                 '''
                 z_fwd_list[fwd_t] = self.z_to_c_fwd_list[fwd_t](zt_1_tmp, z_fwd_list[fwd_t], w=wt[:, fwd_t].view(-1, 1))
 
-            z_fwd_all = torch.stack(z_fwd_list, dim=2).mean(dim=2).view(batch_size, self.hidden_dim)  # .mean(dim=2)
+            z_fwd_all = torch.stack(z_fwd_list, dim=2).view(batch_size, self.hidden_dim)  # .mean(dim=2)
 
             z_fwd_prior = self.z_prior(z_fwd_all, z_fwd_prior)
             curr_layer[t - 1] = z_fwd_prior
@@ -258,7 +260,7 @@ class FullQDisentangledVAE(nn.Module):
 
         prev_layer = torch.stack(curr_layer)
         raw_outputs.append(prev_layer)
-        #prev_layer = self.lockdrop(prev_layer, self.dropout)
+        prev_layer = self.lockdrop(prev_layer, self.dropout)
         outputs.append(prev_layer)
 
         zt_obs_list = torch.stack(zt_obs_list, dim=1)
@@ -393,7 +395,7 @@ class Trainer(object):
             store_wt.append(wt[0].detach().cpu().numpy())
             '''
             store_wt = []
-            z_fwd_list = [torch.zeros(len, self.model.hidden_dim).to(self.device) for i in range(self.model.block_size)]
+            z_fwd_list = [torch.zeros(len, self.model.hidden_dim//self.model.block_size).to(self.device) for i in range(self.model.block_size)]
             z_fwd_prior = torch.zeros(len, self.model.hidden_dim).to(self.device)
             # z_fwd_all = torch.stack(z_fwd_list, dim=2).view(len, self.model.hidden_dim)
             # zt_obs = concat(z_fwd_all, zt_1)
@@ -429,7 +431,7 @@ class Trainer(object):
                     z_fwd_list[fwd_t] = self.model.z_to_c_fwd_list[fwd_t](zt_1_tmp, z_fwd_list[fwd_t],
                                                                           w=wt[:, fwd_t].view(-1, 1))
 
-                z_fwd_all = torch.stack(z_fwd_list, dim=2).mean(dim=2).view(len, self.model.hidden_dim)  # .mean(dim=2)
+                z_fwd_all = torch.stack(z_fwd_list, dim=2).view(len, self.model.hidden_dim)  # .mean(dim=2)
                 # update weight, w0<...<wd<=1, d means block_size
 
                 z_fwd_prior = self.model.z_prior(z_fwd_all, z_fwd_prior)
@@ -563,6 +565,7 @@ if __name__ == '__main__':
                         help='beta slowness regularization applied on RNN activiation (beta = 0 means no regularization)')
     parser.add_argument('--kl_weight', type=float, default=1.0)
     parser.add_argument('--eta', type=float, default=0.0)
+    parser.add_argument('--dropout', type=float, default=1.0)
 
     FLAGS = parser.parse_args()
     np.random.seed(FLAGS.seed)
@@ -593,7 +596,7 @@ if __name__ == '__main__':
     vae = FullQDisentangledVAE(temperature=FLAGS.temperature, frames=FLAGS.frame_size, z_dim=FLAGS.z_dim,
                                hidden_dim=FLAGS.hidden_dim,
                                conv_dim=FLAGS.conv_dim, block_size=FLAGS.block_size, channel=channel,
-                               dataset=FLAGS.dset_name, device=device, shape=shape)
+                               dataset=FLAGS.dset_name, device=device, shape=shape, dropout=FLAGS.dropout)
 
     starttime = datetime.datetime.now()
     now = datetime.datetime.now(dateutil.tz.tzlocal())
