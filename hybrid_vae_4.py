@@ -117,14 +117,12 @@ class FullQDisentangledVAE(nn.Module):
         self.z_prior_out_list = nn.Sequential(nn.Linear(self.hidden_dim, self.z_dim * 2))
         self.lockdrop = LockedDropout()
 
-        self.z_pre = nn.Linear(self.z_dim, self.z_dim)
         self.z_to_c_fwd_list = [GRUCell(input_size=self.z_dim, hidden_size=self.hidden_dim//self.block_size).to(self.device)
                                 for i in range(self.block_size)]
 
         self.z_prior = nn.GRUCell(self.hidden_dim, self.hidden_dim)
 
-        self.z_w_function = nn.Linear(self.hidden_dim,
-                                      self.block_size)  # nn.Sequential(nn.Linear(self.hidden_dim, self.hidden_dim//2),nn.ReLU(), nn.Linear(self.hidden_dim//2, self.block_size))
+        self.z_w_function = nn.Linear(self.hidden_dim, self.block_size)  # nn.Sequential(nn.Linear(self.hidden_dim, self.hidden_dim//2),nn.ReLU(), nn.Linear(self.hidden_dim//2, self.block_size))
         # observation encoder / decoder
         self.enc_obs = Encoder(feat_size=self.hidden_dim, output_size=self.hidden_dim, channel=channel, shape=shape)
         self.dec_obs = Decoder(input_size=self.z_dim, feat_size=self.hidden_dim, channel=channel, dataset=dataset,
@@ -260,7 +258,7 @@ class FullQDisentangledVAE(nn.Module):
 
         prev_layer = torch.stack(curr_layer)
         raw_outputs.append(prev_layer)
-        prev_layer = self.lockdrop(prev_layer, self.dropout)
+        #prev_layer = self.lockdrop(prev_layer, self.dropout)
         outputs.append(prev_layer)
 
         zt_obs_list = torch.stack(zt_obs_list, dim=1)
@@ -543,6 +541,7 @@ if __name__ == '__main__':
     # dataset
     parser.add_argument('--dset_name', type=str, default='bouncing_balls')  # moving_mnist, lpc, bouncing_balls
     # state size
+
     parser.add_argument('--z-dim', type=int, default=144)  # 72 144
     parser.add_argument('--hidden-dim', type=int, default=216)  # 216 252
     parser.add_argument('--conv-dim', type=int, default=256)  # 256 512
@@ -557,7 +556,7 @@ if __name__ == '__main__':
     parser.add_argument('--temperature', type=float, default=0.5)
     parser.add_argument('--grad-clip', type=float, default=0.0)
     parser.add_argument('--max-epochs', type=int, default=100)
-    parser.add_argument('--gpu_id', type=int, default=0)
+    parser.add_argument('--gpu_id', type=int, default=1)
 
     parser.add_argument('--alpha', type=float, default=0,
                         help='alpha L2 regularization on RNN activation (alpha = 0 means no regularization)')
